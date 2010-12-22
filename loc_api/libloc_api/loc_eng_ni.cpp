@@ -323,7 +323,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
 
                 // Stores notification text
                 hexcode(notif.text, sizeof notif.text,
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
                         umts_cp_req->notification_text.notification_text_val,
 #else
                         umts_cp_req->notification_text,
@@ -332,7 +332,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
 
                 // Stores requestor ID
                 hexcode(notif.requestor_id, sizeof notif.requestor_id,
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
                         umts_cp_req->requestor_id.requestor_id_string.requestor_id_string_val,
 #else
                         umts_cp_req->requestor_id.requestor_id_string,
@@ -359,7 +359,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
                 if (supl_req->flags & RPC_LOC_NI_CLIENT_NAME_PRESENT)
                 {
                     hexcode(notif.text, sizeof notif.text,
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
                             supl_req->client_name.client_name_string.client_name_string_val,   /* buffer */
 #else
                             supl_req->client_name.client_name_string,                          /* buffer */
@@ -375,7 +375,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
                 if (supl_req->flags & RPC_LOC_NI_REQUESTOR_ID_PRESENT)
                 {
                     hexcode(notif.requestor_id, sizeof notif.requestor_id,
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
                             supl_req->requestor_id.requestor_id_string.requestor_id_string_val,  /* buffer */
 #else
                             supl_req->requestor_id.requestor_id_string,                          /* buffer */

@@ -993,7 +993,7 @@ static void loc_eng_report_nmea (const rpc_loc_nmea_report_s_type *nmea_report_p
         gettimeofday(&tv, (struct timezone *) NULL);
         long long now = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
 
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
         loc_eng_data.nmea_cb(now, nmea_report_ptr->nmea_sentences.nmea_sentences_val,
                 nmea_report_ptr->nmea_sentences.nmea_sentences_len);
 #else
@@ -1149,7 +1149,8 @@ static int set_agps_server()
     server_info_ptr->addr_type = RPC_LOC_SERVER_ADDR_URL;
     server_info_ptr->addr_info.disc =  RPC_LOC_SERVER_ADDR_URL;
 
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+
     char   url[24];
     memset(url, 0, sizeof(url));
     snprintf(url, sizeof(url) - 1, "%d.%d.%d.%d:%d",
@@ -1291,7 +1292,7 @@ static void loc_eng_process_atl_deferred_action (int flags)
             conn_open_status_ptr->open_status = RPC_LOC_SERVER_OPEN_SUCCESS;
             // Both buffer are of the same maximum size, and the source is null terminated
             // strcpy (&(ioctl_data.rpc_loc_ioctl_data_u_type_u.conn_open_status.apn_name), &(loc_eng_data.apn_name));
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
             conn_open_status_ptr->apn_name = loc_eng_data.apn_name;
 #else
             memset(conn_open_status_ptr->apn_name, 0, sizeof(conn_open_status_ptr->apn_name));
