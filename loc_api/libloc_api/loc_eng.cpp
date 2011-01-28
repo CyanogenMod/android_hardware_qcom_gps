@@ -263,7 +263,7 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    pthread_mutex_init(&loc_eng_data.mute_session_lock, NULL);
    pthread_mutex_init(&loc_eng_data.deferred_action_mutex, NULL);
    pthread_cond_init(&loc_eng_data.deferred_action_cond, NULL);
-
+   pthread_mutex_init (&(loc_eng_data.deferred_stop_mutex), NULL);
 
    // Create threads (if not yet created)
    if (!loc_eng_inited)
@@ -380,8 +380,11 @@ static void loc_eng_cleanup()
       loc_eng_data.deferred_action_thread = NULL;
    }
 
-   pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
+   pthread_mutex_destroy (&loc_eng_data.xtra_module_data.lock);
+   pthread_mutex_destroy (&loc_eng_data.deferred_stop_mutex);
    pthread_cond_destroy  (&loc_eng_data.deferred_action_cond);
+   pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
+   pthread_mutex_destroy (&loc_eng_data.mute_session_lock);
 #endif
 }
 
@@ -444,6 +447,17 @@ static int loc_eng_stop()
 
    int ret_val;
    LOC_LOGD("loc_eng_stop called");
+   pthread_mutex_lock(&(loc_eng_data.deferred_stop_mutex));
+    // work around problem with loc_eng_stop when AGPS requests are pending
+    // we defer stopping the engine until the AGPS request is done
+    if (loc_eng_data.agps_request_pending)
+    {
+        loc_eng_data.stop_request_pending = true;
+        LOC_LOGD("loc_eng_stop - deferring stop until AGPS data call is finished\n");
+        pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
+        return 0;
+    }
+   pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
 
    ret_val = loc_stop_fix(loc_eng_data.client_handle);
    if (ret_val != RPC_LOC_API_SUCCESS)
@@ -1323,11 +1337,13 @@ static void loc_eng_process_conn_request (const rpc_loc_server_request_s_type *s
    {
       loc_eng_data.agps_status = GPS_REQUEST_AGPS_DATA_CONN;
       loc_eng_data.conn_handle = server_request_ptr->payload.rpc_loc_server_request_u_type_u.open_req.conn_handle;
+      loc_eng_data.agps_request_pending = true;
    }
    else
    {
       loc_eng_data.agps_status = GPS_RELEASE_AGPS_DATA_CONN;
       loc_eng_data.conn_handle = server_request_ptr->payload.rpc_loc_server_request_u_type_u.close_req.conn_handle;
+      loc_eng_data.agps_request_pending = false;
    }
    /* hold a wake lock while events are pending for deferred_action_thread */
    loc_eng_data.acquire_wakelock_cb();
@@ -2156,6 +2172,24 @@ static void loc_eng_deferred_action_thread(void* arg)
          }
          loc_eng_data.data_connection_is_on = FALSE;
       }
+      if (flags & (DEFERRED_ACTION_AGPS_DATA_SUCCESS |
+                   DEFERRED_ACTION_AGPS_DATA_CLOSED |
+                   DEFERRED_ACTION_AGPS_DATA_FAILED))
+      {
+          pthread_mutex_lock(&(loc_eng_data.deferred_stop_mutex));
+          // work around problem with loc_eng_stop when AGPS requests are pending
+          // we defer stopping the engine until the AGPS request is done
+          loc_eng_data.agps_request_pending = false;
+          if (loc_eng_data.stop_request_pending)
+           {
+              LOC_LOGD ("handling deferred stop\n");
+              if (loc_stop_fix(loc_eng_data.client_handle) != RPC_LOC_API_SUCCESS)
+               {
+                   LOC_LOGD ("loc_stop_fix failed!\n");
+               }
+           }
+           pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
+       }
 
       // ATL open/close actions
       if (status != 0 )
