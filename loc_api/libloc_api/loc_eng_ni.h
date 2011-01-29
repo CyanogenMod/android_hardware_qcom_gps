@@ -37,6 +37,7 @@
 extern const GpsNiInterface sLocEngNiInterface;
 
 typedef struct {
+   pthread_t               loc_ni_thread;            /* NI thread */
    pthread_mutex_t         loc_ni_lock;
    int                     response_time_left;       /* examine time for NI response */
    boolean                 user_response_received;   /* NI User reponse received or not from Java layer*/
@@ -44,7 +45,6 @@ typedef struct {
    rpc_loc_ni_event_s_type loc_ni_request;
    int                     current_notif_id;         /* ID to check against response */
    rpc_loc_ni_user_resp_e_type resp;
-   GpsNiCallbacks          *callbacks_ref;
 } loc_eng_ni_data_s_type;
 
 // Functions for sLocEngNiInterface
