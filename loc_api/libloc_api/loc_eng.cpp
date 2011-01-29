@@ -2149,6 +2149,7 @@ static void loc_eng_deferred_action_thread(void* arg)
      // copy anything we need before releasing the mutex
       loc_event = loc_eng_data.loc_event;
       if (loc_event != 0) {
+          LOC_LOGD("loc_eng_deferred_action_thread event %llu\n",loc_event);
           memcpy(&loc_event_payload, &loc_eng_data.loc_event_payload, sizeof(loc_event_payload));
           loc_eng_data.loc_event = 0;
       }
