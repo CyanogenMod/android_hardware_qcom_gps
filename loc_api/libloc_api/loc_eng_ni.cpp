@@ -371,7 +371,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
          memset(notif.requestor_id, 0, sizeof notif.requestor_id);
 
          // Stores notification text
-#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+#if (AMSS_VERSION==3200)
          hexcode(notif.text, sizeof notif.text,
                umts_cp_req->notification_text.notification_text_val,
                umts_cp_req->notification_length);
@@ -382,7 +382,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
 #endif /* #if (AMSS_VERSION==3200) */
 
          // Stores requestor ID
-#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+#if (AMSS_VERSION==3200)
          hexcode(notif.requestor_id, sizeof notif.requestor_id,
                umts_cp_req->requestor_id.requestor_id_string.requestor_id_string_val,
                umts_cp_req->requestor_id.string_len);
@@ -405,7 +405,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
             int addr_len = 0;
             const char *address_source = NULL;
 
-#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+#if (AMSS_VERSION==3200)
             address_source = umts_cp_req->ext_client_address_data.ext_client_address.ext_client_address_val;
 #else
             address_source = umts_cp_req->ext_client_address_data.ext_client_address;
@@ -444,7 +444,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
          if (supl_req->flags & RPC_LOC_NI_CLIENT_NAME_PRESENT)
          {
 
-#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+#if (AMSS_VERSION==3200)
             hexcode(notif.text, sizeof notif.text,
                     supl_req->client_name.client_name_string.client_name_string_val,   /* buffer */
                     supl_req->client_name.string_len                                   /* length */
@@ -465,7 +465,7 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
          // Requestor ID
          if (supl_req->flags & RPC_LOC_NI_REQUESTOR_ID_PRESENT)
          {
-#if (AMSS_VERSION==3200) || (AMSS_VERSION==6225)
+#if (AMSS_VERSION==3200)
             hexcode(notif.requestor_id, sizeof notif.requestor_id,
                   supl_req->requestor_id.requestor_id_string.requestor_id_string_val,  /* buffer */
                   supl_req->requestor_id.string_len                                    /* length */
