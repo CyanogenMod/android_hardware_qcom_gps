@@ -329,6 +329,16 @@ xdr_rpc_loc_engine_state_e_type (XDR *xdrs, rpc_loc_engine_state_e_type *objp)
 }
 
 bool_t
+xdr_rpc_loc_fix_session_state_e_type (XDR *xdrs, rpc_loc_fix_session_state_e_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_enum (xdrs, (enum_t *) objp))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
 xdr_rpc_loc_status_event_payload_u_type (XDR *xdrs, rpc_loc_status_event_payload_u_type *objp)
 {
 	register int32_t *buf;
@@ -338,6 +348,10 @@ xdr_rpc_loc_status_event_payload_u_type (XDR *xdrs, rpc_loc_status_event_payload
 	switch (objp->disc) {
 	case RPC_LOC_STATUS_EVENT_ENGINE_STATE:
 		 if (!xdr_rpc_loc_engine_state_e_type (xdrs, &objp->rpc_loc_status_event_payload_u_type_u.engine_state))
+			 return FALSE;
+		break;
+	case RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE:
+		 if (!xdr_rpc_loc_fix_session_state_e_type (xdrs, &objp->rpc_loc_status_event_payload_u_type_u.fix_session_state))
 			 return FALSE;
 		break;
 	default:

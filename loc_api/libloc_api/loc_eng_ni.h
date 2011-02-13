@@ -30,18 +30,21 @@
 #ifndef LOC_ENG_NI_H
 #define LOC_ENG_NI_H
 
-#include <hardware/gps.h>
-
 #define LOC_NI_NO_RESPONSE_TIME            20                      /* secs */
+
+#define LOC_NI_NOTIF_KEY_ADDRESS           "Address"
 
 extern const GpsNiInterface sLocEngNiInterface;
 
 typedef struct {
-    pthread_mutex_t         loc_ni_lock;
-    int                     response_time_left;       /* examine time for NI response */
-    boolean                 notif_in_progress;        /* NI notification/verification in progress */
-    rpc_loc_ni_event_s_type loc_ni_request;
-    int                     current_notif_id;         /* ID to check against response */
+   pthread_mutex_t         loc_ni_lock;
+   int                     response_time_left;       /* examine time for NI response */
+   boolean                 user_response_received;   /* NI User reponse received or not from Java layer*/
+   boolean                 notif_in_progress;        /* NI notification/verification in progress */
+   rpc_loc_ni_event_s_type loc_ni_request;
+   int                     current_notif_id;         /* ID to check against response */
+   rpc_loc_ni_user_resp_e_type resp;
+   GpsNiCallbacks          *callbacks_ref;
 } loc_eng_ni_data_s_type;
 
 // Functions for sLocEngNiInterface
@@ -49,8 +52,8 @@ extern void loc_eng_ni_init(GpsNiCallbacks *callbacks);
 extern void loc_eng_ni_respond(int notif_id, GpsUserResponseType user_response);
 
 extern int loc_eng_ni_callback (
-        rpc_loc_event_mask_type               loc_event,              /* event mask           */
-        const rpc_loc_event_payload_u_type*   loc_event_payload       /* payload              */
+      rpc_loc_event_mask_type               loc_event,              /* event mask           */
+      const rpc_loc_event_payload_u_type*   loc_event_payload       /* payload              */
 );
 
 #endif /* LOC_ENG_NI_H */
