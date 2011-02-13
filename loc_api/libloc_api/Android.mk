@@ -26,6 +26,8 @@ LOCAL_SRC_FILES += \
     loc_eng_ioctl.cpp \
     loc_eng_xtra.cpp \
     loc_eng_ni.cpp \
+    loc_eng_log.cpp \
+    loc_eng_cfg.cpp \
     gps.c
 
 LOCAL_CFLAGS += \

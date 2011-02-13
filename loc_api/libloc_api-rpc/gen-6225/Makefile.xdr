@@ -28,7 +28,7 @@ $(SERVERS)::
 
 fixup:
 	mv ../$(RPC_INC)/loc_api_common.h ../$(RPC_INC)/loc_api_common.h.bak
-	sed ../$(RPC_INC)/loc_api_common.h.bak -e "/#include <rpc/a#include \"$(RPC_INC)/loc_api_fixup.h\"" > ../$(RPC_INC)/loc_api_common.h
+	sed ../$(RPC_INC)/loc_api_common.h.bak -e "/#include <rpc/a#include \"loc_api_fixup.h\"" > ../$(RPC_INC)/loc_api_common.h
 	rm -f ../$(RPC_INC)/loc_api_common.h.bak
 
 clean:

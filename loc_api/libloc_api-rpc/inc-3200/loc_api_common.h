@@ -169,6 +169,7 @@ typedef struct rpc_loc_nmea_report_s_type rpc_loc_nmea_report_s_type;
 
 enum rpc_loc_status_event_e_type {
 	RPC_LOC_STATUS_EVENT_ENGINE_STATE = 1,
+	RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE = 2,
 	RPC_LOC_STATUS_EVENT_MAX = 268435456,
 };
 typedef enum rpc_loc_status_event_e_type rpc_loc_status_event_e_type;
@@ -180,10 +181,18 @@ enum rpc_loc_engine_state_e_type {
 };
 typedef enum rpc_loc_engine_state_e_type rpc_loc_engine_state_e_type;
 
+enum rpc_loc_fix_session_state_e_type {
+	RPC_LOC_FIX_SESSION_STATE_BEGIN = 1,
+	RPC_LOC_FIX_SESSION_STATE_END = 2,
+	RPC_LOC_FIX_SESSION_STATE_MAX = 268435456,
+};
+typedef enum rpc_loc_fix_session_state_e_type rpc_loc_fix_session_state_e_type;
+
 struct rpc_loc_status_event_payload_u_type {
 	rpc_loc_status_event_e_type disc;
 	union {
 		rpc_loc_engine_state_e_type engine_state;
+		rpc_loc_fix_session_state_e_type fix_session_state;
 	} rpc_loc_status_event_payload_u_type_u;
 };
 typedef struct rpc_loc_status_event_payload_u_type rpc_loc_status_event_payload_u_type;
@@ -852,6 +861,7 @@ extern  bool_t xdr_rpc_loc_gnss_info_s_type (XDR *, rpc_loc_gnss_info_s_type*);
 extern  bool_t xdr_rpc_loc_nmea_report_s_type (XDR *, rpc_loc_nmea_report_s_type*);
 extern  bool_t xdr_rpc_loc_status_event_e_type (XDR *, rpc_loc_status_event_e_type*);
 extern  bool_t xdr_rpc_loc_engine_state_e_type (XDR *, rpc_loc_engine_state_e_type*);
+extern  bool_t xdr_rpc_loc_fix_session_state_e_type (XDR *, rpc_loc_fix_session_state_e_type*);
 extern  bool_t xdr_rpc_loc_status_event_payload_u_type (XDR *, rpc_loc_status_event_payload_u_type*);
 extern  bool_t xdr_rpc_loc_status_event_s_type (XDR *, rpc_loc_status_event_s_type*);
 extern  bool_t xdr_rpc_loc_server_addr_e_type (XDR *, rpc_loc_server_addr_e_type*);
@@ -949,6 +959,7 @@ extern bool_t xdr_rpc_loc_gnss_info_s_type ();
 extern bool_t xdr_rpc_loc_nmea_report_s_type ();
 extern bool_t xdr_rpc_loc_status_event_e_type ();
 extern bool_t xdr_rpc_loc_engine_state_e_type ();
+extern bool_t xdr_rpc_loc_fix_session_state_e_type ();
 extern bool_t xdr_rpc_loc_status_event_payload_u_type ();
 extern bool_t xdr_rpc_loc_status_event_s_type ();
 extern bool_t xdr_rpc_loc_server_addr_e_type ();

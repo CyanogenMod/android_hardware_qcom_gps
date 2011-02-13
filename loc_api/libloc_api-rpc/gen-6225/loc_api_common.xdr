@@ -195,6 +195,7 @@ struct rpc_loc_nmea_report_s_type {
 
 enum rpc_loc_status_event_e_type {
   RPC_LOC_STATUS_EVENT_ENGINE_STATE = 1,
+  RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE = 2,
   RPC_LOC_STATUS_EVENT_MAX = 268435456
 };
 
@@ -204,9 +205,17 @@ enum rpc_loc_engine_state_e_type {
   RPC_LOC_ENGINE_STATE_MAX = 268435456
 };
 
+enum rpc_loc_fix_session_state_e_type {
+  RPC_LOC_FIX_SESSION_STATE_BEGIN = 1,
+  RPC_LOC_FIX_SESSION_STATE_END = 2,
+  RPC_LOC_FIX_SESSION_STATE_MAX = 268435456
+};
+
 union rpc_loc_status_event_payload_u_type switch (rpc_loc_status_event_e_type disc) {
   case RPC_LOC_STATUS_EVENT_ENGINE_STATE:
     rpc_loc_engine_state_e_type engine_state;
+  case RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE:
+    rpc_loc_fix_session_state_e_type fix_session_state;
   default:
     void;
 };
