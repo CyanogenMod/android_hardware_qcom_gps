@@ -213,6 +213,13 @@ static int loc_eng_init(GpsCallbacks* callbacks)
 {
    LOC_LOGD("loc_eng_init entering");
 
+#ifdef DISABLE_CLEANUP
+   if (loc_eng_data.deferred_action_thread) {
+       // already initialized
+       return 0;
+   }
+#endif
+
    // Start the LOC api RPC service (if not started yet)
    loc_api_glue_init();
    callbacks->set_capabilities_cb(GPS_CAPABILITY_SCHEDULING | GPS_CAPABILITY_MSA | GPS_CAPABILITY_MSB);
@@ -352,6 +359,10 @@ SIDE EFFECTS
 ===========================================================================*/
 static void loc_eng_cleanup()
 {
+
+#ifdef DISABLE_CLEANUP
+   return;
+#else
    // clean up
    loc_eng_deinit();
 
@@ -375,6 +386,7 @@ static void loc_eng_cleanup()
    pthread_cond_destroy  (&loc_eng_data.deferred_action_cond);
    pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
    pthread_mutex_destroy (&loc_eng_data.mute_session_lock);
+#endif
 }
 
 
