@@ -34,6 +34,10 @@ LOCAL_CFLAGS += \
     -fno-short-enums \
     -DAMSS_VERSION=$(BOARD_VENDOR_QCOM_GPS_LOC_API_AMSS_VERSION)
 
+## Do all boards need this?
+LOCAL_CFLAGS += \
+    -DDISABLE_CLEANUP
+
 LOCAL_C_INCLUDES:= \
 	$(TARGET_OUT_HEADERS)/libloc_api-rpc \
 	$(TARGET_OUT_HEADERS)/libloc_api-rpc/inc \
