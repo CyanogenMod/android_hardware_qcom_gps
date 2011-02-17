@@ -30,40 +30,13 @@
 #ifndef LOC_ENG_IOCTL_H
 #define LOC_ENG_IOCTL_H
 
-// Module data
-typedef struct loc_eng_ioctl_data_s_type
-{
-    // We are waiting for an ioctl callback
-    boolean                       cb_is_selected;
-    // The thread has been put in a wait state for an ioctl callback
-    boolean                       cb_is_waiting;
-    // Loc client handle that is waiting for the callback
-    rpc_loc_client_handle_type    client_handle;
-    // IOCTL type that the loc client is waiting for
-    rpc_loc_ioctl_e_type          ioctl_type;
-    // The IOCLT report has arrived for the waiting client
-    boolean                       cb_has_arrived;
-    // The payload for the RPC_LOC_EVENT_IOCTL_REPORT
-    rpc_loc_ioctl_callback_s_type cb_payload;
-    // Mutex to access this data structure
-    pthread_mutex_t               cb_data_mutex;
-    // LOC ioctl callback arrived mutex
-    pthread_cond_t                cb_arrived_cond;
-} loc_eng_ioctl_data_s_type;
-
-
 extern boolean loc_eng_ioctl
 (
-    rpc_loc_client_handle_type           handle,
-    rpc_loc_ioctl_e_type                 ioctl_type,
-    rpc_loc_ioctl_data_u_type*           ioctl_data_ptr,
-    uint32                               timeout_msec,
-    rpc_loc_ioctl_callback_s_type       *cb_data_ptr
+      rpc_loc_client_handle_type           handle,
+      rpc_loc_ioctl_e_type                 ioctl_type,
+      rpc_loc_ioctl_data_u_type*           ioctl_data_ptr,
+      uint32                               timeout_msec,
+      rpc_loc_ioctl_callback_s_type       *cb_data_ptr
 );
 
-extern boolean loc_eng_ioctl_process_cb 
-(
-    rpc_loc_client_handle_type           client_handle,
-    const rpc_loc_ioctl_callback_s_type *cb_data_ptr
-);
 #endif // LOC_ENG_IOCTL_H

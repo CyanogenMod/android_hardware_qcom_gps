@@ -91,7 +91,6 @@ typedef struct
    gps_release_wakelock           release_wakelock_cb;
    AGpsStatusValue                agps_status;
    loc_eng_xtra_data_s_type       xtra_module_data;
-   loc_eng_ioctl_data_s_type      ioctl_data;
    // data from loc_event_cb
    rpc_loc_event_mask_type        loc_event;
    rpc_loc_event_payload_u_type   loc_event_payload;
