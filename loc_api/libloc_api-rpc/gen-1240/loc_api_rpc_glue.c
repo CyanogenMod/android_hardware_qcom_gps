@@ -218,6 +218,11 @@ int32 loc_close(rpc_loc_client_handle_type handle)
     stat = RPC_FUNC_VERSION(rpc_loc_close_, /* LOC_APIVERS */ 0x00040001)(&args, &rets, loc_api_clnt);
     LOC_GLUE_CHECK_RESULT(stat, int32);
 
+    if (loc_api_clnt != NULL)
+        clnt_destroy(loc_api_clnt);
+
+    loc_api_clnt = NULL;
+
     return (int32) rets.loc_close_result;
 }
 
