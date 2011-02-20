@@ -1027,6 +1027,13 @@ static void loc_eng_report_position(const rpc_loc_parsed_position_s_type *locati
             LOC_LOGV("loc_eng_report_position: fire callback\n");
             loc_eng_data.location_cb(&location);
          }
+      } 
+      else if (location_report_ptr->session_status == RPC_LOC_SESS_STATUS_USER_END)
+      {
+         /* Userspace has finished the ongoing session, set the internal
+          * engine status to OFF so the next report will speed up its
+          * effective shutdown */
+         loc_eng_data.engine_status = GPS_STATUS_ENGINE_OFF;
       }
       else
       {
@@ -1178,7 +1185,9 @@ static void loc_eng_report_status (const rpc_loc_status_event_s_type *status_rep
    status = GPS_STATUS_NONE;
 
 
-  if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE)
+  if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE ||
+      (loc_eng_data.engine_status == GPS_STATUS_ENGINE_OFF &&
+      status_report_ptr->event == RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE))
     {
         if (status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.engine_state == RPC_LOC_ENGINE_STATE_ON)
         {
