@@ -1178,7 +1178,8 @@ static void loc_eng_report_status (const rpc_loc_status_event_s_type *status_rep
    status = GPS_STATUS_NONE;
 
 
-  if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE)
+  if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE ||
+      status_report_ptr->event == RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE)
     {
         if (status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.engine_state == RPC_LOC_ENGINE_STATE_ON)
         {
