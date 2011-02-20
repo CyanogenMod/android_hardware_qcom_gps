@@ -362,6 +362,12 @@ int32 loc_close
    }
 
    LOC_GLUE_CHECK_RESULT(stat, int32);
+
+   if (loc_api_clnt != NULL)
+       clnt_destroy(loc_api_clnt);
+
+   loc_api_clnt = NULL;
+
    return (int32) rets.loc_close_result;
 }
 
