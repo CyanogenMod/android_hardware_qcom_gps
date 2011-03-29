@@ -734,7 +734,11 @@ static const void* loc_eng_get_extension(const char* name)
 {
    if (strcmp(name, GPS_XTRA_INTERFACE) == 0)
    {
+#if (AMSS_VERSION!=20000)
       return &sLocEngXTRAInterface;
+#else
+      return NULL;
+#endif
    }
 
    else if (strcmp(name, AGPS_INTERFACE) == 0)
@@ -1273,7 +1277,7 @@ static void loc_eng_report_nmea(const rpc_loc_nmea_report_s_type *nmea_report_pt
       gettimeofday(&tv, (struct timezone *) NULL);
       long long now = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
 
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200||AMSS_VERSION==20000)
       loc_eng_data.nmea_cb(now, nmea_report_ptr->nmea_sentences.nmea_sentences_val,
             nmea_report_ptr->nmea_sentences.nmea_sentences_len);
 #else
@@ -1282,7 +1286,7 @@ static void loc_eng_report_nmea(const rpc_loc_nmea_report_s_type *nmea_report_pt
          nmea_report_ptr->nmea_sentences[3], nmea_report_ptr->nmea_sentences[4],
                nmea_report_ptr->nmea_sentences[5]);
 
-#endif /* #if (AMSS_VERSION==3200) */
+#endif /* #if (AMSS_VERSION==3200||AMSS_VERSION==20000) */
    }
 }
 
@@ -1482,12 +1486,12 @@ static void loc_eng_ioctl_data_open_status(int is_succ)
    // Fill in data
    ioctl_data.disc = RPC_LOC_IOCTL_INFORM_SERVER_OPEN_STATUS;
    conn_open_status_ptr->conn_handle = loc_eng_data.conn_handle;
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200||AMSS_VERSION==20000)
    conn_open_status_ptr->apn_name = loc_eng_data.apn_name; /* requires APN */
 #else
    strlcpy(conn_open_status_ptr->apn_name, loc_eng_data.apn_name,
          sizeof conn_open_status_ptr->apn_name);
-#endif /* #if (AMSS_VERSION==3200) */
+#endif /* #if (AMSS_VERSION==3200||AMSS_VERSION==20000) */
    conn_open_status_ptr->open_status = is_succ ? RPC_LOC_SERVER_OPEN_SUCCESS : RPC_LOC_SERVER_OPEN_FAIL;
 
    LOC_LOGD("loc_eng_ioctl for ATL open %s, APN name = [%s]\n",
@@ -1783,7 +1787,7 @@ static int loc_eng_set_server(AGpsType type, const char* hostname, int port)
       server_info_ptr->addr_type = RPC_LOC_SERVER_ADDR_URL;
       server_info_ptr->addr_info.disc = server_info_ptr->addr_type;
       server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.length = len;
-#if (AMSS_VERSION==3200)
+#if (AMSS_VERSION==3200||AMSS_VERSION==20000)
       server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr.addr_val = (char*) url;
       server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr.addr_len= len;
       LOC_LOGD ("loc_eng_set_server, addr = %s\n", server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr.addr_val);
@@ -1791,7 +1795,7 @@ static int loc_eng_set_server(AGpsType type, const char* hostname, int port)
       strlcpy(server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr, url,
             sizeof server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr);
       LOC_LOGD ("loc_eng_set_server, addr = %s\n", server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr);
-#endif /* #if (AMSS_VERSION==3200) */
+#endif /* #if (AMSS_VERSION==3200||AMSS_VERSION==20000) */
       break;
 
    case AGPS_TYPE_C2K:
@@ -2029,6 +2033,28 @@ static void loc_eng_process_atl_action(AGpsStatusValue status)
    }
 }
 
+#if (AMSS_VERSION==20000)
+static int loc_eng_set_gps_lock(rpc_loc_lock_e_type lock_type)
+{
+    rpc_loc_ioctl_data_u_type    ioctl_data;
+    boolean                      ret_val;
+
+    LOGD ("loc_eng_set_gps_lock mode, client = %d, lock_type = %d\n",
+            (int32) loc_eng_data.client_handle, lock_type);
+
+    ioctl_data.rpc_loc_ioctl_data_u_type_u.engine_lock = lock_type;
+    ioctl_data.disc = RPC_LOC_IOCTL_SET_ENGINE_LOCK;
+
+    ret_val = loc_eng_ioctl (loc_eng_data.client_handle,
+                            RPC_LOC_IOCTL_SET_ENGINE_LOCK,
+                            &ioctl_data,
+                            LOC_IOCTL_DEFAULT_TIMEOUT,
+                            NULL /* No output information is expected*/);
+
+    return ret_val;
+}
+#endif
+
 /*===========================================================================
 FUNCTION loc_eng_deferred_action_thread
 
@@ -2049,7 +2075,16 @@ SIDE EFFECTS
 static void loc_eng_deferred_action_thread(void* arg)
 {
    AGpsStatusValue      status;
+#if (AMSS_VERSION==20000)
+   int count=30;
+#endif
    LOC_LOGD("loc_eng_deferred_action_thread started\n");
+
+#if (AMSS_VERSION==20000)
+   while (loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE) != TRUE && count) {
+	count--;
+   }
+#endif
 
    // make sure we do not run in background scheduling group
    set_sched_policy(gettid(), SP_FOREGROUND);
@@ -2153,6 +2188,9 @@ static void loc_eng_deferred_action_thread(void* arg)
       }
    }
 
+#if (AMSS_VERSION==20000)
+   loc_eng_set_gps_lock(RPC_LOC_LOCK_ALL);
+#endif
    LOC_LOGD("loc_eng_deferred_action_thread exiting\n");
    loc_eng_data.release_wakelock_cb();
    loc_eng_data.deferred_action_thread = 0;
