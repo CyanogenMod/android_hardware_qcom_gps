@@ -554,6 +554,11 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    if (min_interval > 0) {
         fix_criteria_ptr->min_interval = min_interval;
         fix_criteria_ptr->valid_mask |= RPC_LOC_FIX_CRIT_VALID_MIN_INTERVAL;
+    }else if(min_interval == 0)
+    {
+        /*If the framework passes in 0 transalate it into the maximum frequency we can report positions
+          which is 1 Hz or once very second */
+        fix_criteria_ptr->min_interval = MIN_POSSIBLE_FIX_INTERVAL;
     }
     if (preferred_accuracy > 0) {
         fix_criteria_ptr->preferred_accuracy = preferred_accuracy;
