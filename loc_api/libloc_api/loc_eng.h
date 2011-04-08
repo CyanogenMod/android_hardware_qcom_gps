@@ -60,6 +60,7 @@ typedef unsigned char boolean;
 //To signify that when requesting a data connection HAL need not specify whether CDMA or UMTS
 #define DONT_CARE                 0
 
+#define MIN_POSSIBLE_FIX_INTERVAL 1000 /* msec */
 enum loc_mute_session_e_type {
    LOC_MUTE_SESS_NONE,
    LOC_MUTE_SESS_WAIT,
