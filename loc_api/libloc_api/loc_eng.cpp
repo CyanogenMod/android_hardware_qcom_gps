@@ -996,7 +996,12 @@ static void loc_eng_report_position(const rpc_loc_parsed_position_s_type *locati
          if (location_report_ptr->valid_mask &  RPC_LOC_POS_VALID_HEADING)
          {
             location.flags    |= GPS_LOCATION_HAS_BEARING;
+#if (AMSS_VERSION==20000)
+            // convert 10 bit value to degrees
+            location.bearing = location_report_ptr->heading * 10 * 360 / 1024;
+#else
             location.bearing = location_report_ptr->heading;
+#endif
          }
 
          // Uncertainty (circular)
