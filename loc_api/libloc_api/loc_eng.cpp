@@ -1253,13 +1253,13 @@ static void loc_eng_report_status (const rpc_loc_status_event_s_type *status_rep
    pthread_mutex_unlock(&loc_eng_data.mute_session_lock);
 #endif
    // Only keeps ENGINE ON/OFF in engine_status
-   if (status_internal == GPS_STATUS_ENGINE_ON || status_internal == GPS_STATUS_ENGINE_OFF)
+   if (status != GPS_STATUS_NONE && (status_internal == GPS_STATUS_ENGINE_ON || status_internal == GPS_STATUS_ENGINE_OFF))
    {
       loc_eng_data.engine_status = status_internal;
    }
 
    // Only keeps SESSION BEGIN/END in fix_session_status
-   if (status_internal == GPS_STATUS_SESSION_BEGIN || status_internal == GPS_STATUS_SESSION_END)
+   if (status != GPS_STATUS_NONE && (status_internal == GPS_STATUS_SESSION_BEGIN || status_internal == GPS_STATUS_SESSION_END))
    {
       loc_eng_data.fix_session_status = status_internal;
    }
