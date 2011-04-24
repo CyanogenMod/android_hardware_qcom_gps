@@ -108,7 +108,7 @@ SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-static int qct_loc_eng_inject_xtra_data(char* data, int length)
+static int qct_loc_eng_inject_xtra_data_one(char* data, int length)
 {
    int     rpc_ret_val = RPC_LOC_API_GENERAL_FAILURE;
    boolean ret_val = 0;
@@ -173,6 +173,7 @@ static int qct_loc_eng_inject_xtra_data(char* data, int length)
                                   NULL))
          {
             ret_val = EIO;
+            LOC_LOGE("loc_eng_ioctl for xtra error\n");
          }
          break; // done with injection
       }
@@ -182,6 +183,16 @@ static int qct_loc_eng_inject_xtra_data(char* data, int length)
    }
 
    return ret_val;
+}
+static int qct_loc_eng_inject_xtra_data(char* data, int length)
+{
+   int rc = EIO;
+   int tries = 0;
+   while (tries++ < 3) {
+      rc = qct_loc_eng_inject_xtra_data_one(data, length);
+      if (!rc) break;
+   }
+   return rc;
 }
 
 /*===========================================================================
