@@ -283,6 +283,7 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    // XTRA module data initialization
    pthread_mutex_init(&loc_eng_data.xtra_module_data.lock, NULL);
    loc_eng_data.xtra_module_data.download_request_cb = NULL;
+   loc_eng_data.xtra_module_data.request_pending = FALSE;
 
    loc_eng_inited = 1;
    LOC_LOGD("loc_eng_init created client, id = %d\n", (int32) loc_eng_data.client_handle);
@@ -1414,17 +1415,22 @@ static void loc_eng_process_loc_event (rpc_loc_event_mask_type loc_event,
          RPC_LOC_ASSIST_DATA_PREDICTED_ORBITS_REQ)
       {
          LOC_LOGD("loc_event_cb: XTRA download request");
-
-         // Call Registered callback
-         if (loc_eng_data.xtra_module_data.download_request_cb != NULL)
-         {
-            loc_eng_data.xtra_module_data.download_request_cb();
-         }
+         loc_eng_data.xtra_module_data.request_pending = TRUE;
       }
       if (loc_event_payload->rpc_loc_event_payload_u_type_u.assist_data_request.event ==
          RPC_LOC_ASSIST_DATA_TIME_REQ)
       {
          LOC_LOGD("loc_event_cb: XTRA time download request... not supported");
+      }
+   }
+
+   if (loc_eng_data.xtra_module_data.request_pending)
+   {
+      // Call Registered callback
+      if (loc_eng_data.xtra_module_data.download_request_cb != NULL)
+      {
+         loc_eng_data.xtra_module_data.request_pending = FALSE;
+         loc_eng_data.xtra_module_data.download_request_cb();
       }
    }
 

@@ -42,6 +42,7 @@ typedef struct
 
    // loc_eng_ioctl_cb_data_s_type   ioctl_cb_data;
    gps_xtra_download_request      download_request_cb;
+   int                            request_pending;
 
    // XTRA data buffer
    char                          *xtra_data_for_injection;  // NULL if no pending data
