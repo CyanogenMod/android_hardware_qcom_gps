@@ -134,6 +134,7 @@ typedef struct
    pthread_mutex_t                mute_session_lock;
    loc_mute_session_e_type        mute_session_state;
 
+   pthread_mutex_t                ioctl_mutex;
 } loc_eng_data_s_type;
 
 extern loc_eng_data_s_type loc_eng_data;

@@ -257,6 +257,7 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    pthread_mutex_init(&loc_eng_data.deferred_action_mutex, NULL);
    pthread_cond_init(&loc_eng_data.deferred_action_cond, NULL);
    pthread_mutex_init (&(loc_eng_data.deferred_stop_mutex), NULL);
+   pthread_mutex_init (&(loc_eng_data.ioctl_mutex), NULL);
 
    // Create threads (if not yet created)
    if (!loc_eng_inited)
@@ -374,6 +375,7 @@ static void loc_eng_cleanup()
    pthread_cond_destroy  (&loc_eng_data.deferred_action_cond);
    pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
    pthread_mutex_destroy (&loc_eng_data.mute_session_lock);
+   pthread_mutex_destroy (&loc_eng_data.ioctl_mutex);
 }
 
 
@@ -2105,15 +2107,11 @@ SIDE EFFECTS
 static void loc_eng_deferred_action_thread(void* arg)
 {
    AGpsStatusValue      status;
-#if (AMSS_VERSION==20000)
-   int count=30;
-#endif
+
    LOC_LOGD("loc_eng_deferred_action_thread started\n");
 
 #if (AMSS_VERSION==20000)
-   while (loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE) != TRUE && count) {
-	count--;
-   }
+   loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE);
 #endif
 
    // make sure we do not run in background scheduling group

@@ -86,7 +86,9 @@ boolean loc_eng_ioctl
    LOC_LOGD("loc_eng_ioctl called: client = %d, ioctl_type = %s\n", (int32) handle,
          loc_get_ioctl_type_name(ioctl_type));
 
+   pthread_mutex_lock(&loc_eng_data.ioctl_mutex);
    ret_val = loc_api_sync_ioctl(handle, ioctl_type, ioctl_data_ptr, timeout_msec, cb_data_ptr);
+   pthread_mutex_unlock(&loc_eng_data.ioctl_mutex);
 
    LOC_LOGD("loc_eng_ioctl result: client = %d, ioctl_type = %s, %s\n",
          (int32) handle,
