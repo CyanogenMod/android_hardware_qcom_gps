@@ -2038,7 +2038,7 @@ static void loc_eng_process_atl_action(AGpsStatusValue status)
    }
 }
 
-#if (AMSS_VERSION==20000)
+#ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
 static int loc_eng_set_gps_lock(rpc_loc_lock_e_type lock_type)
 {
     rpc_loc_ioctl_data_u_type    ioctl_data;
@@ -2080,12 +2080,12 @@ SIDE EFFECTS
 static void loc_eng_deferred_action_thread(void* arg)
 {
    AGpsStatusValue      status;
-#if (AMSS_VERSION==20000)
+#ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
    int count=30;
 #endif
    LOC_LOGD("loc_eng_deferred_action_thread started\n");
 
-#if (AMSS_VERSION==20000)
+#ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
    while (loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE) != TRUE && count) {
 	count--;
    }
@@ -2193,7 +2193,7 @@ static void loc_eng_deferred_action_thread(void* arg)
       }
    }
 
-#if (AMSS_VERSION==20000)
+#ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
    loc_eng_set_gps_lock(RPC_LOC_LOCK_ALL);
 #endif
    LOC_LOGD("loc_eng_deferred_action_thread exiting\n");
