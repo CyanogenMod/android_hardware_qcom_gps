@@ -258,16 +258,6 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    pthread_cond_init(&loc_eng_data.deferred_action_cond, NULL);
 
 
-   // Create threads (if not yet created)
-   if (!loc_eng_inited)
-   {
-      loc_eng_data.deferred_action_thread = NULL;
-      loc_eng_data.deferred_action_thread = callbacks->create_thread_cb("loc_api",loc_eng_deferred_action_thread, NULL);
-#ifdef FEATURE_GNSS_BIT_API
-      gpsone_loc_api_server_launch(NULL, NULL);
-#endif /* FEATURE_GNSS_BIT_API */
-   }
-
    // Open client
    rpc_loc_event_mask_type event = RPC_LOC_EVENT_PARSED_POSITION_REPORT |
                                    RPC_LOC_EVENT_SATELLITE_REPORT |
@@ -279,6 +269,16 @@ static int loc_eng_init(GpsCallbacks* callbacks)
                                    RPC_LOC_EVENT_NI_NOTIFY_VERIFY_REQUEST;
    loc_eng_data.client_handle = loc_open(event, loc_event_cb);
    loc_eng_data.client_opened = (loc_eng_data.client_handle >= 0);
+
+   // Create threads (if not yet created)
+   if (!loc_eng_inited)
+   {
+      loc_eng_data.deferred_action_thread = NULL;
+      loc_eng_data.deferred_action_thread = callbacks->create_thread_cb("loc_api",loc_eng_deferred_action_thread, NULL);
+#ifdef FEATURE_GNSS_BIT_API
+      gpsone_loc_api_server_launch(NULL, NULL);
+#endif /* FEATURE_GNSS_BIT_API */
+   }
 
    // XTRA module data initialization
    pthread_mutex_init(&loc_eng_data.xtra_module_data.lock, NULL);
