@@ -515,29 +515,41 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    rpc_loc_ioctl_data_u_type    ioctl_data;
    rpc_loc_fix_criteria_s_type *fix_criteria_ptr;
    rpc_loc_ioctl_e_type         ioctl_type = RPC_LOC_IOCTL_SET_FIX_CRITERIA;
-   rpc_loc_operation_mode_e_type op_mode;
    boolean                      ret_val;
 
    LOGD ("loc_eng_set_position mode, client = %d, interval = %d, mode = %d\n",
             (int32) loc_eng_data.client_handle, min_interval, mode);
 
+   fix_criteria_ptr = &ioctl_data.rpc_loc_ioctl_data_u_type_u.fix_criteria;
+
+   fix_criteria_ptr->valid_mask = RPC_LOC_FIX_CRIT_VALID_PREFERRED_OPERATION_MODE |
+                                  RPC_LOC_FIX_CRIT_VALID_RECURRENCE_TYPE;
+
+#ifdef LIBLOC_USE_DEFAULT_RESPONSE_TIME_AND_ACCURACY
+   // 1240 requires the preferred response time and accuracy to be specified,
+   // or it is very inaccurate.
+   fix_criteria_ptr->valid_mask |= RPC_LOC_FIX_CRIT_VALID_PREFERRED_RESPONSE_TIME |
+                                   RPC_LOC_FIX_CRIT_VALID_PREFERRED_ACCURACY;
+#endif
+
+   fix_criteria_ptr->min_interval = min_interval;
+   fix_criteria_ptr->preferred_accuracy = 50;
+
    switch (mode)
    {
    case GPS_POSITION_MODE_MS_BASED:
-      op_mode = RPC_LOC_OPER_MODE_MSB;
+      fix_criteria_ptr->preferred_operation_mode = RPC_LOC_OPER_MODE_MSB;
+      fix_criteria_ptr->preferred_response_time = 89;
       break;
    case GPS_POSITION_MODE_MS_ASSISTED:
-      op_mode = RPC_LOC_OPER_MODE_MSA;
+      fix_criteria_ptr->preferred_operation_mode = RPC_LOC_OPER_MODE_MSA;
+      fix_criteria_ptr->preferred_response_time = 89;
       break;
    default:
-      op_mode = RPC_LOC_OPER_MODE_STANDALONE;
+      fix_criteria_ptr->preferred_operation_mode = RPC_LOC_OPER_MODE_STANDALONE;
+      fix_criteria_ptr->preferred_response_time = 60;
+      break;
    }
-
-   fix_criteria_ptr = &ioctl_data.rpc_loc_ioctl_data_u_type_u.fix_criteria;
-   fix_criteria_ptr->valid_mask = RPC_LOC_FIX_CRIT_VALID_PREFERRED_OPERATION_MODE |
-                                  RPC_LOC_FIX_CRIT_VALID_RECURRENCE_TYPE;
-   fix_criteria_ptr->min_interval = min_interval;
-   fix_criteria_ptr->preferred_operation_mode = op_mode;
 
    if (min_interval > 0) {
         fix_criteria_ptr->min_interval = min_interval;
