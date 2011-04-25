@@ -57,6 +57,7 @@ typedef struct {
 
 typedef struct {
    pthread_mutex_t                lock;
+   pthread_cond_t                 loc_cb_arrived_cond;
    int                            size;
    boolean                        in_use;  /* at least one sync call is active */
    boolean                        slot_in_use[LOC_SYNC_CALL_BUFFER_SIZE];

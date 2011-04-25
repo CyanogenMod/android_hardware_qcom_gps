@@ -69,6 +69,8 @@ void loc_api_sync_call_init()
    pthread_mutex_init(&loc_sync_data.lock, NULL);
    pthread_mutex_lock(&loc_sync_data.lock);
 
+   pthread_cond_init(&loc_sync_data.loc_cb_arrived_cond, NULL);
+
    loc_sync_data.size = LOC_SYNC_CALL_BUFFER_SIZE;
    loc_sync_data.in_use = FALSE;
 
@@ -190,6 +192,7 @@ void loc_api_callback_process_sync_call(
       loc_sync_data.in_use = FALSE;
    }
 
+   pthread_cond_signal(&loc_sync_data.loc_cb_arrived_cond);
    pthread_mutex_unlock(&loc_sync_data.lock);
 }
 
@@ -416,6 +419,7 @@ int loc_api_wait_callback(
       pthread_mutex_unlock(&slot->lock);
       loc_free_slot(select_id);
       ret_val = RPC_LOC_API_ENGINE_BUSY; /* busy, rejected */
+      LOGE("loc_wait_callback: already waiting on select_id: %d\n", select_id);
       return ret_val;  /* exit */
    }
 
@@ -477,7 +481,7 @@ int loc_api_sync_ioctl
       rpc_loc_ioctl_callback_s_type       *cb_data_ptr
 )
 {
-   int                              rc = RPC_LOC_API_SUCCESS;
+   int                              rc = RPC_LOC_API_ENGINE_BUSY;
    int                              select_id;
    rpc_loc_ioctl_callback_s_type    callback_data;
 
@@ -486,11 +490,21 @@ int loc_api_sync_ioctl
 
    if (select_id >= 0)
    {
-      rc =  loc_ioctl(handle, ioctl_type, ioctl_data_ptr);
+      pthread_mutex_lock(&loc_sync_data.lock);
+      rc = loc_ioctl(handle, ioctl_type, ioctl_data_ptr);
+      while (rc == RPC_LOC_API_ENGINE_BUSY)
+      {
+         /* TODO: Use timeout? */
+         LOGD("loc_api_sync_ioctl: select_id = %d, engine busy, waiting...\n", select_id);
+         pthread_cond_wait(&loc_sync_data.loc_cb_arrived_cond, &loc_sync_data.lock);
+         rc = loc_ioctl(handle, ioctl_type, ioctl_data_ptr);
+      }
+      pthread_mutex_unlock(&loc_sync_data.lock);
       LOGV("loc_api_sync_ioctl: select_id = %d, loc_ioctl returned %d\n", select_id, rc);
 
       if (rc != RPC_LOC_API_SUCCESS)
       {
+         LOGE("loc_api_sync_ioctl: select_id = %d, loc_ioctl returned %d\n", select_id, rc);
          loc_free_slot(select_id);
       }
       else {

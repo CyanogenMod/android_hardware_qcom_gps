@@ -2123,15 +2123,10 @@ SIDE EFFECTS
 static void loc_eng_deferred_action_thread(void* arg)
 {
    AGpsStatusValue      status;
-#ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
-   int count=30;
-#endif
    LOC_LOGD("loc_eng_deferred_action_thread started\n");
 
 #ifdef LIBLOC_USE_GPS_PRIVACY_LOCK
-   while (loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE) != TRUE && count) {
-	count--;
-   }
+   loc_eng_set_gps_lock(RPC_LOC_LOCK_NONE);
 #endif
 
    // make sure we do not run in background scheduling group
