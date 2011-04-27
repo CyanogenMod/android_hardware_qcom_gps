@@ -1387,7 +1387,7 @@ SIDE EFFECTS
 static void loc_eng_process_loc_event (rpc_loc_event_mask_type loc_event,
         rpc_loc_event_payload_u_type* loc_event_payload)
 {
-   LOC_LOGD("loc_eng_process_loc_event: %x\n", loc_event);
+   LOC_LOGD("loc_eng_process_loc_event: %llx\n", (unsigned long long)loc_event);
    // Parsed report
    if ( (loc_event & RPC_LOC_EVENT_PARSED_POSITION_REPORT) &&
          loc_eng_data.mute_session_state != LOC_MUTE_SESS_IN_SESSION)
