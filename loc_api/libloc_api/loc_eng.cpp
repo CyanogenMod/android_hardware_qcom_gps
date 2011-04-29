@@ -2172,11 +2172,7 @@ static void loc_eng_deferred_action_thread(void* arg)
       if (loc_eng_data.engine_status != GPS_STATUS_ENGINE_ON &&
           loc_eng_data.xtra_module_data.xtra_data_for_injection != NULL)
       {
-         pthread_mutex_unlock(&loc_eng_data.deferred_action_mutex);
-
          loc_eng_inject_xtra_data_in_buffer();
-
-         pthread_mutex_lock(&loc_eng_data.deferred_action_mutex);
       }
 
       //Process connectivity manager events at this point
