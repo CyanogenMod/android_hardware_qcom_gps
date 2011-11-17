@@ -59,7 +59,7 @@ LOCAL_C_INCLUDES:= \
 	$(TARGET_OUT_HEADERS)/librpc
 
 LOCAL_MODULE:= libloc_api-rpc
-
+LOCAL_MODULE_TAGS := optional
 include $(BUILD_STATIC_LIBRARY)
 
 endif
