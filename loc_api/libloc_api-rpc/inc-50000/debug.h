@@ -1,4 +1,4 @@
-/* Copyright (c) 2009,2011 Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -24,29 +24,46 @@
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
-#ifndef LOC_ENG_XTRA_H
-#define LOC_ENG_XTRA_H
+#ifndef DEBUG_H
+#define DEBUG_H
 
-#include <hardware/gps.h>
+#include <stdio.h>
 
-extern const GpsXtraInterface sLocEngXTRAInterface;
-extern int loc_eng_inject_xtra_data_in_buffer();
+#define LOG_TAG "libgps-rpc"
+#include <utils/Log.h>
 
-// Module data
-typedef struct
-{
-   pthread_mutex_t                lock;
+#define PRINT(x...) do {                                    \
+        fprintf(stdout, "%s(%d) ", __FUNCTION__, __LINE__); \
+        fprintf(stdout, ##x);                               \
+        LOGD(x);                               \
+    } while(0)
 
-   // loc_eng_ioctl_cb_data_s_type   ioctl_cb_data;
-   gps_xtra_download_request      download_request_cb;
-   int                            request_pending;
+#ifdef DEBUG
+#define D PRINT
+#else
+#define D(x...) do { } while(0)
+#endif
 
-   // XTRA data buffer
-   char                          *xtra_data_for_injection;  // NULL if no pending data
-   int                            xtra_data_len;
-} loc_eng_xtra_data_s_type;
+#ifdef VERBOSE
+#define V PRINT
+#else
+#define V(x...) do { } while(0)
+#endif
 
-#endif // LOC_ENG_XTRA_H
+#define E(x...) do {                                        \
+        fprintf(stderr, "%s(%d) ", __FUNCTION__, __LINE__); \
+        fprintf(stderr, ##x);                               \
+        LOGE(x);                                            \
+    } while(0)
+
+#define FAILIF(cond, msg...) do {                                              \
+        if (__builtin_expect (cond, 0)) {                                      \
+            fprintf(stderr, "%s:%s:(%d): ", __FILE__, __FUNCTION__, __LINE__); \
+            fprintf(stderr, ##msg);                                            \
+            LOGE(##msg);                                                       \
+        }                                                                      \
+    } while(0)
+
+#endif/*DEBUG_H*/

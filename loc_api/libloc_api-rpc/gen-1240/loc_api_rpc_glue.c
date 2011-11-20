@@ -55,6 +55,7 @@ when       who      what, where, why
 
 #include <rpc/rpc.h>
 #include <rpc/clnt.h>
+#include "loc_api_sync_call.h"
 
 /* Include RPC headers */
 #include "loc_api_rpc_glue.h"
@@ -120,6 +121,9 @@ bool_t rpc_loc_event_cb_f_type_0x00040001_svc(
     const rpc_loc_event_payload_u_type*  loc_event_payload =
         (const rpc_loc_event_payload_u_type*) argp->loc_event_payload;
 
+    /* Gives control to synchronous call handler */
+    loc_api_callback_process_sync_call(loc_handle, loc_event, loc_event_payload);
+
     int32 rc = loc_api_saved_cb(loc_handle, loc_event, loc_event_payload);
     ret->loc_event_cb_f_type_result = rc;
 
@@ -171,6 +175,8 @@ int loc_api_glue_init(void)
         }
 
         /* Init RPC callbacks */
+        loc_api_sync_call_init();
+
         int rc = loc_apicb_app_init();
         if (rc >= 0)
         {
@@ -217,6 +223,11 @@ int32 loc_close(rpc_loc_client_handle_type handle)
 
     stat = RPC_FUNC_VERSION(rpc_loc_close_, /* LOC_APIVERS */ 0x00040001)(&args, &rets, loc_api_clnt);
     LOC_GLUE_CHECK_RESULT(stat, int32);
+
+    if (loc_api_clnt != NULL)
+        clnt_destroy(loc_api_clnt);
+
+    loc_api_clnt = NULL;
 
     return (int32) rets.loc_close_result;
 }
