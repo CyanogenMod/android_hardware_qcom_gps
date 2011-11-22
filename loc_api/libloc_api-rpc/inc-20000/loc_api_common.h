@@ -24,12 +24,12 @@ extern "C" {
 #define RPC_LOC_EVENT_NMEA_POSITION_REPORT 0x00000008
 #define RPC_LOC_EVENT_SATELLITE_REPORT 0x00000002
 #define RPC_LOC_EVENT_STATUS_REPORT 0x00000100
-#define RPC_LOC_OPEN_VERSION 0x00010001
-#define RPC_LOC_CLOSE_VERSION 0x00010001
-#define RPC_LOC_START_FIX_VERSION 0x00010001
-#define RPC_LOC_STOP_FIX_VERSION 0x00010001
-#define RPC_LOC_IOCTL_VERSION 0x00010001
-#define RPC_LOC_EVENT_CB_F_TYPE_VERSION 0x00010001
+#define RPC_LOC_OPEN_VERSION 0x00020001
+#define RPC_LOC_CLOSE_VERSION 0x00020001
+#define RPC_LOC_START_FIX_VERSION 0x00020001
+#define RPC_LOC_STOP_FIX_VERSION 0x00020001
+#define RPC_LOC_IOCTL_VERSION 0x00020001
+#define RPC_LOC_EVENT_CB_F_TYPE_VERSION 0x00020001
 #define RPC_LOC_APIAPI_VERSION_IS_HASHKEY 0
 #define RPC_LOC_API_API_MAJOR_NUM 0x0001
 
@@ -724,6 +724,7 @@ struct rpc_loc_assist_data_pos_s_type {
 	float vert_unc;
 	u_char confidence_horizontal;
 	u_char confidence_vertical;
+        rpc_int32 timestamp_age;
 };
 typedef struct rpc_loc_assist_data_pos_s_type rpc_loc_assist_data_pos_s_type;
 
@@ -832,8 +833,8 @@ struct rpc_loc_event_payload_u_type {
 	} rpc_loc_event_payload_u_type_u;
 };
 typedef struct rpc_loc_event_payload_u_type rpc_loc_event_payload_u_type;
-#define RPC_LOC_API_NULL_VERSION 0x00010001
-#define RPC_LOC_API_RPC_GLUE_CODE_INFO_REMOTE_VERSION 0x00010001
+#define RPC_LOC_API_NULL_VERSION 0x00020001
+#define RPC_LOC_API_RPC_GLUE_CODE_INFO_REMOTE_VERSION 0x00020001
 
 /* the xdr functions */
 

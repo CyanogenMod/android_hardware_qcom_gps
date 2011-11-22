@@ -290,7 +290,7 @@ xdr_rpc_loc_gnss_info_s_type (XDR *xdrs, rpc_loc_gnss_info_s_type *objp)
 		 return FALSE;
 	 if (!xdr_rpc_uint16 (xdrs, &objp->sv_count))
 		 return FALSE;
-	 if (!xdr_array (xdrs, (char **)&objp->sv_list.sv_list_val, (u_int *) &objp->sv_list.sv_list_len, RPC_LOC_API_MAX_SV_COUNT,
+	 if (!xdr_array (xdrs, (char **)&objp->sv_list.sv_list_val, (u_int *) &objp->sv_list.sv_list_len, 80,
 		sizeof (rpc_loc_sv_info_s_type), (xdrproc_t) xdr_rpc_loc_sv_info_s_type))
 		 return FALSE;
 	return TRUE;
@@ -301,9 +301,10 @@ xdr_rpc_loc_nmea_report_s_type (XDR *xdrs, rpc_loc_nmea_report_s_type *objp)
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_rpc_uint16 (xdrs, &objp->length))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->nmea_sentences.nmea_sentences_val, (u_int *) &objp->nmea_sentences.nmea_sentences_len, RPC_LOC_API_MAX_NMEA_STRING_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->nmea_sentences, 1200))
 		 return FALSE;
 	return TRUE;
 }
@@ -399,9 +400,10 @@ xdr_rpc_loc_server_addr_url_type (XDR *xdrs, rpc_loc_server_addr_url_type *objp)
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_rpc_uint16 (xdrs, &objp->length))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->addr.addr_val, (u_int *) &objp->addr.addr_len, RPC_LOC_API_MAX_SERVER_ADDR_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->addr, 256))
 		 return FALSE;
 	return TRUE;
 }
@@ -559,9 +561,10 @@ xdr_rpc_loc_ni_requestor_id_s_type (XDR *xdrs, rpc_loc_ni_requestor_id_s_type *o
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_u_char (xdrs, &objp->data_coding_scheme))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->requestor_id_string.requestor_id_string_val, (u_int *) &objp->requestor_id_string.requestor_id_string_len, RPC_LOC_NI_MAX_REQUESTOR_ID_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->requestor_id_string, 200))
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->string_len))
 		 return FALSE;
@@ -573,9 +576,10 @@ xdr_rpc_loc_ni_supl_client_name_s_type (XDR *xdrs, rpc_loc_ni_supl_client_name_s
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_u_char (xdrs, &objp->data_coding_scheme))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->client_name_string.client_name_string_val, (u_int *) &objp->client_name_string.client_name_string_len, RPC_LOC_NI_MAX_CLIENT_NAME_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->client_name_string, 64))
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->string_len))
 		 return FALSE;
@@ -593,7 +597,7 @@ xdr_rpc_loc_ni_supl_qop_s_type (XDR *xdrs, rpc_loc_ni_supl_qop_s_type *objp)
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->veracc))
 		 return FALSE;
-	 if (!xdr_u_char (xdrs, &objp->maxLocAge))
+	 if (!xdr_rpc_uint16 (xdrs, &objp->maxLocAge))
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->delay))
 		 return FALSE;
@@ -634,9 +638,10 @@ xdr_rpc_loc_ni_ext_client_address_s_type (XDR *xdrs, rpc_loc_ni_ext_client_addre
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_u_char (xdrs, &objp->ext_client_address_len))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->ext_client_address.ext_client_address_val, (u_int *) &objp->ext_client_address.ext_client_address_len, RPC_LOC_NI_MAX_EXT_CLIENT_ADDRESS))
+	 if (!xdr_opaque (xdrs, objp->ext_client_address, 20))
 		 return FALSE;
 	return TRUE;
 }
@@ -668,9 +673,10 @@ xdr_rpc_loc_ni_codeword_string_s_type (XDR *xdrs, rpc_loc_ni_codeword_string_s_t
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_u_char (xdrs, &objp->data_coding_scheme))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->lcs_codeword_string.lcs_codeword_string_val, (u_int *) &objp->lcs_codeword_string.lcs_codeword_string_len, RPC_LOC_NI_CODEWORD_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->lcs_codeword_string, 20))
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->string_len))
 		 return FALSE;
@@ -692,6 +698,7 @@ xdr_rpc_loc_ni_umts_cp_notify_verify_req_s_type (XDR *xdrs, rpc_loc_ni_umts_cp_n
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_rpc_loc_ni_notify_verify_e_type (xdrs, &objp->notification_priv_type))
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->invoke_id))
@@ -700,7 +707,7 @@ xdr_rpc_loc_ni_umts_cp_notify_verify_req_s_type (XDR *xdrs, rpc_loc_ni_umts_cp_n
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->notification_length))
 		 return FALSE;
-	 if (!xdr_bytes (xdrs, (char **)&objp->notification_text.notification_text_val, (u_int *) &objp->notification_text.notification_text_len, RPC_LOC_NI_MAX_CLIENT_NAME_LENGTH))
+	 if (!xdr_opaque (xdrs, objp->notification_text, 64))
 		 return FALSE;
 	 if (!xdr_rpc_loc_ni_datacoding_scheme_e_type (xdrs, &objp->datacoding_scheme))
 		 return FALSE;
@@ -717,6 +724,28 @@ xdr_rpc_loc_ni_umts_cp_notify_verify_req_s_type (XDR *xdrs, rpc_loc_ni_umts_cp_n
 	 if (!xdr_rpc_loc_ni_service_type_id_s_type (xdrs, &objp->service_type_id))
 		 return FALSE;
 	 if (!xdr_rpc_uint16 (xdrs, &objp->user_response_timer))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_ni_service_interaction_e_type (XDR *xdrs, rpc_loc_ni_service_interaction_e_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_enum (xdrs, (enum_t *) objp))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_ni_vx_service_interaction_req_s_type (XDR *xdrs, rpc_loc_ni_vx_service_interaction_req_s_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_rpc_loc_ni_vx_notify_verify_req_s_type (xdrs, &objp->ni_vx_req))
+		 return FALSE;
+	 if (!xdr_rpc_loc_ni_service_interaction_e_type (xdrs, &objp->service_interation_type))
 		 return FALSE;
 	return TRUE;
 }
@@ -739,6 +768,10 @@ xdr_rpc_loc_ni_event_payload_u_type (XDR *xdrs, rpc_loc_ni_event_payload_u_type 
 		break;
 	case RPC_LOC_NI_EVENT_UMTS_CP_NOTIFY_VERIFY_REQ:
 		 if (!xdr_rpc_loc_ni_umts_cp_notify_verify_req_s_type (xdrs, &objp->rpc_loc_ni_event_payload_u_type_u.umts_cp_req))
+			 return FALSE;
+		break;
+	case RPC_LOC_NI_EVENT_VX_SERVICE_INTERACTION_REQ:
+		 if (!xdr_rpc_loc_ni_vx_service_interaction_req_s_type (xdrs, &objp->rpc_loc_ni_event_payload_u_type_u.service_interaction_req))
 			 return FALSE;
 		break;
 	default:
@@ -774,7 +807,7 @@ xdr_rpc_struct_loc_time_download_source_s_type_servers_ptr (XDR *xdrs, rpc_struc
 {
 	register int32_t *buf;
 
-	 if (!xdr_string (xdrs, objp, RPC_LOC_API_MAX_SERVER_ADDR_LENGTH))
+	 if (!xdr_string (xdrs, objp, 256))
 		 return FALSE;
 	return TRUE;
 }
@@ -807,7 +840,7 @@ xdr_rpc_struct_loc_predicted_orbits_data_source_s_type_servers_ptr (XDR *xdrs, r
 {
 	register int32_t *buf;
 
-	 if (!xdr_string (xdrs, objp, RPC_LOC_API_MAX_SERVER_ADDR_LENGTH))
+	 if (!xdr_string (xdrs, objp, 256))
 		 return FALSE;
 	return TRUE;
 }
@@ -953,6 +986,28 @@ xdr_rpc_loc_server_request_s_type (XDR *xdrs, rpc_loc_server_request_s_type *obj
 	 if (!xdr_rpc_loc_server_request_e_type (xdrs, &objp->event))
 		 return FALSE;
 	 if (!xdr_rpc_loc_server_request_u_type (xdrs, &objp->payload))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_qwip_request_e_type (XDR *xdrs, rpc_loc_qwip_request_e_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_enum (xdrs, (enum_t *) objp))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_qwip_request_s_type (XDR *xdrs, rpc_loc_qwip_request_s_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_rpc_loc_qwip_request_e_type (xdrs, &objp->request_type))
+		 return FALSE;
+	 if (!xdr_rpc_uint16 (xdrs, &objp->tbf_ms))
 		 return FALSE;
 	return TRUE;
 }
@@ -1172,6 +1227,8 @@ xdr_rpc_loc_assist_data_pos_s_type (XDR *xdrs, rpc_loc_assist_data_pos_s_type *o
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->confidence_vertical))
 		 return FALSE;
+	 if (!xdr_rpc_int32 (xdrs, &objp->timestamp_age))
+		 return FALSE;
 	return TRUE;
 }
 
@@ -1190,11 +1247,12 @@ xdr_rpc_loc_server_open_status_s_type (XDR *xdrs, rpc_loc_server_open_status_s_t
 {
 	register int32_t *buf;
 
+	int i;
 	 if (!xdr_rpc_loc_server_connection_handle (xdrs, &objp->conn_handle))
 		 return FALSE;
 	 if (!xdr_rpc_loc_server_open_status_e_type (xdrs, &objp->open_status))
 		 return FALSE;
-	 if (!xdr_string (xdrs, &objp->apn_name, ~0))
+	 if (!xdr_opaque (xdrs, objp->apn_name, 100))
 		 return FALSE;
 	return TRUE;
 }
@@ -1217,6 +1275,126 @@ xdr_rpc_loc_server_close_status_s_type (XDR *xdrs, rpc_loc_server_close_status_s
 	 if (!xdr_rpc_loc_server_connection_handle (xdrs, &objp->conn_handle))
 		 return FALSE;
 	 if (!xdr_rpc_loc_server_close_status_e_type (xdrs, &objp->close_status))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_fix_time_s_type (XDR *xdrs, rpc_loc_wiper_fix_time_s_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_rpc_uint32 (xdrs, &objp->slow_clock_count))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_fix_pos_s_type (XDR *xdrs, rpc_loc_wiper_fix_pos_s_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_rpc_int32 (xdrs, &objp->lat))
+		 return FALSE;
+	 if (!xdr_rpc_int32 (xdrs, &objp->lon))
+		 return FALSE;
+	 if (!xdr_rpc_uint16 (xdrs, &objp->HEPE))
+		 return FALSE;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->num_of_aps_used))
+		 return FALSE;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->fix_error_code))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_ap_info_s_type (XDR *xdrs, rpc_loc_wiper_ap_info_s_type *objp)
+{
+	register int32_t *buf;
+
+	int i;
+	 if (!xdr_opaque (xdrs, objp->mac_addr, 6))
+		 return FALSE;
+	 if (!xdr_rpc_int32 (xdrs, &objp->rssi))
+		 return FALSE;
+	 if (!xdr_rpc_uint16 (xdrs, &objp->channel))
+		 return FALSE;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->ap_qualifier))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_ap_set_s_type (XDR *xdrs, rpc_loc_wiper_ap_set_s_type *objp)
+{
+	register int32_t *buf;
+
+	int i;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->num_of_aps))
+		 return FALSE;
+	 if (!xdr_vector (xdrs, (char *)objp->ap_info, 50,
+		sizeof (rpc_loc_wiper_ap_info_s_type), (xdrproc_t) xdr_rpc_loc_wiper_ap_info_s_type))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_position_report_s_type (XDR *xdrs, rpc_loc_wiper_position_report_s_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_rpc_uint8 (xdrs, &objp->wiper_valid_info_flag))
+		 return FALSE;
+	 if (!xdr_rpc_loc_wiper_fix_time_s_type (xdrs, &objp->wiper_fix_time))
+		 return FALSE;
+	 if (!xdr_rpc_loc_wiper_fix_pos_s_type (xdrs, &objp->wiper_fix_position))
+		 return FALSE;
+	 if (!xdr_rpc_loc_wiper_ap_set_s_type (xdrs, &objp->wiper_ap_set))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_wiper_status_e_type (XDR *xdrs, rpc_loc_wiper_status_e_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_enum (xdrs, (enum_t *) objp))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_fs_operation_e_type (XDR *xdrs, rpc_loc_fs_operation_e_type *objp)
+{
+	register int32_t *buf;
+
+	 if (!xdr_enum (xdrs, (enum_t *) objp))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_rpc_loc_efs_data_s_type (XDR *xdrs, rpc_loc_efs_data_s_type *objp)
+{
+	register int32_t *buf;
+
+	int i;
+	 if (!xdr_opaque (xdrs, objp->filename, 64))
+		 return FALSE;
+	 if (!xdr_rpc_loc_fs_operation_e_type (xdrs, &objp->operation))
+		 return FALSE;
+	 if (!xdr_rpc_uint32 (xdrs, &objp->total_size))
+		 return FALSE;
+	 if (!xdr_bytes (xdrs, (char **)&objp->data_ptr.data_ptr_val, (u_int *) &objp->data_ptr.data_ptr_len, ~0))
+		 return FALSE;
+	 if (!xdr_rpc_uint32 (xdrs, &objp->part_len))
+		 return FALSE;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->part))
+		 return FALSE;
+	 if (!xdr_rpc_uint8 (xdrs, &objp->total_parts))
+		 return FALSE;
+	 if (!xdr_rpc_uint32 (xdrs, &objp->reserved))
 		 return FALSE;
 	return TRUE;
 }
@@ -1305,6 +1483,15 @@ xdr_rpc_loc_ioctl_data_u_type (XDR *xdrs, rpc_loc_ioctl_data_u_type *objp)
 		 if (!xdr_rpc_loc_server_close_status_s_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.conn_close_status))
 			 return FALSE;
 		break;
+	case RPC_LOC_IOCTL_SEND_WIPER_POSITION_REPORT:
+	case RPC_LOC_EVENT_NMEA_1HZ_REPORT:
+		 if (!xdr_rpc_loc_wiper_position_report_s_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.wiper_pos))
+			 return FALSE;
+		break;
+	case RPC_LOC_IOCTL_NOTIFY_WIPER_STATUS:
+		 if (!xdr_rpc_loc_wiper_status_e_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.wiper_status))
+			 return FALSE;
+		break;
 	case RPC_LOC_IOCTL_SET_ENGINE_LOCK:
 		 if (!xdr_rpc_loc_lock_e_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.engine_lock))
 			 return FALSE;
@@ -1330,6 +1517,10 @@ xdr_rpc_loc_ioctl_data_u_type (XDR *xdrs, rpc_loc_ioctl_data_u_type *objp)
 		break;
 	case RPC_LOC_IOCTL_DELETE_ASSIST_DATA:
 		 if (!xdr_rpc_loc_assist_data_delete_s_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.assist_data_delete))
+			 return FALSE;
+		break;
+	case RPC_LOC_IOCTL_ACCESS_EFS_DATA:
+		 if (!xdr_rpc_loc_efs_data_s_type (xdrs, &objp->rpc_loc_ioctl_data_u_type_u.efs_data))
 			 return FALSE;
 		break;
 	default:
@@ -1373,6 +1564,7 @@ xdr_rpc_loc_ioctl_callback_data_u_type (XDR *xdrs, rpc_loc_ioctl_callback_data_u
 	case RPC_LOC_IOCTL_GET_CDMA_PDE_SERVER_ADDR:
 	case RPC_LOC_IOCTL_GET_CDMA_MPC_SERVER_ADDR:
 	case RPC_LOC_IOCTL_GET_UMTS_SLP_SERVER_ADDR:
+	case RPC_LOC_IOCTL_GET_CUSTOM_PDE_SERVER_ADDR:
 		 if (!xdr_rpc_loc_server_info_s_type (xdrs, &objp->rpc_loc_ioctl_callback_data_u_type_u.server_addr))
 			 return FALSE;
 		break;
@@ -1442,6 +1634,10 @@ xdr_rpc_loc_event_payload_u_type (XDR *xdrs, rpc_loc_event_payload_u_type *objp)
 		break;
 	case RPC_LOC_EVENT_STATUS_REPORT:
 		 if (!xdr_rpc_loc_status_event_s_type (xdrs, &objp->rpc_loc_event_payload_u_type_u.status_report))
+			 return FALSE;
+		break;
+	case RPC_LOC_EVENT_WPS_NEEDED_REQUEST:
+		 if (!xdr_rpc_loc_qwip_request_s_type (xdrs, &objp->rpc_loc_event_payload_u_type_u.qwip_request))
 			 return FALSE;
 		break;
 	case RPC_LOC_EVENT_RESERVED:

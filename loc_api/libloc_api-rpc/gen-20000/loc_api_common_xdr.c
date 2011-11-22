@@ -1172,6 +1172,9 @@ xdr_rpc_loc_assist_data_pos_s_type (XDR *xdrs, rpc_loc_assist_data_pos_s_type *o
 		 return FALSE;
 	 if (!xdr_u_char (xdrs, &objp->confidence_vertical))
 		 return FALSE;
+	 if (!xdr_rpc_int32 (xdrs, &objp->timestamp_age))
+		 return FALSE;
+
 	return TRUE;
 }
 

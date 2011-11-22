@@ -1,4 +1,4 @@
-/* Copyright (c) 2009,2011 Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -24,29 +24,22 @@
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
-#ifndef LOC_ENG_XTRA_H
-#define LOC_ENG_XTRA_H
+#ifndef LOC_APICB_APPINIT_H
+#define LOC_APICB_APPINIT_H
 
-#include <hardware/gps.h>
-
-extern const GpsXtraInterface sLocEngXTRAInterface;
-extern int loc_eng_inject_xtra_data_in_buffer();
-
-// Module data
-typedef struct
+#ifdef __cplusplus
+extern "C"
 {
-   pthread_mutex_t                lock;
+#endif
 
-   // loc_eng_ioctl_cb_data_s_type   ioctl_cb_data;
-   gps_xtra_download_request      download_request_cb;
-   int                            request_pending;
+ /* Initialization function for callbacks */
+extern int loc_apicb_app_init();
+extern void loc_apicb_app_deinit();
 
-   // XTRA data buffer
-   char                          *xtra_data_for_injection;  // NULL if no pending data
-   int                            xtra_data_len;
-} loc_eng_xtra_data_s_type;
+#ifdef __cplusplus
+}
+#endif
 
-#endif // LOC_ENG_XTRA_H
+#endif /* LOC_APICB_APPINIT_H */

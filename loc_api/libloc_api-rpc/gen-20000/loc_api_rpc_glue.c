@@ -92,7 +92,7 @@ loc_event_cb_f_type *loc_api_saved_cb = NULL;  /* the only callback of Loc API c
 
 /* Callback functions */
 /* Returns 1 if successful */
-bool_t rpc_loc_event_cb_f_type_0x00010001_svc(
+bool_t rpc_loc_event_cb_f_type_0x00020002_svc(
         rpc_loc_event_cb_f_type_args *argp,
         rpc_loc_event_cb_f_type_rets *ret,
         struct svc_req *req)
@@ -142,7 +142,7 @@ int loc_apicbprog_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t res
     return 1;
 }
 
-int loc_apicbprog_0x00010001_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
+int loc_apicbprog_0x00020001_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 {
     return loc_apicbprog_freeresult (transp, xdr_result, result);
 }
@@ -165,7 +165,7 @@ int loc_api_glue_init(void)
     {
         /* Print msg */
         LOGD("Trying to create RPC client...\n");
-        loc_api_clnt = clnt_create(NULL, LOC_APIPROG, /*LOC_APIVERS*/ 0x00010000, NULL);
+        loc_api_clnt = clnt_create(NULL, LOC_APIPROG, /*LOC_APIVERS*/ 0x00020002, NULL);
         LOGD("Created loc_api_clnt ---- %x\n", (unsigned int)loc_api_clnt);
 
         if (loc_api_clnt == NULL)
@@ -270,14 +270,17 @@ int32 loc_ioctl(
     rpc_loc_ioctl_data_u_type*           ioctl_data
     )
 {
+	LOGD("ioctl start");
     LOC_GLUE_CHECK_INIT(int32);
 
+	LOGD("ioctl checked");
     rpc_loc_ioctl_args args;
     args.handle = handle;
     args.ioctl_data = ioctl_data;
     args.ioctl_type = ioctl_type;
     if (ioctl_data != NULL)
     {
+	LOGD("ioctl has data");
         /* Assign ioctl union discriminator */
         ioctl_data->disc = ioctl_type;
 
@@ -329,8 +332,11 @@ int32 loc_ioctl(
     rpc_loc_ioctl_rets rets;
     enum clnt_stat stat = RPC_SUCCESS;
 
+	LOGD("ioctl is set");
     stat = RPC_FUNC_VERSION(rpc_loc_ioctl_, LOC_APIVERS)(&args, &rets, loc_api_clnt);
+	LOGD("ioctl is called");
     LOC_GLUE_CHECK_RESULT(stat, int32);
+	LOGD("ioctl checked glue");
 
     return (int32) rets.loc_ioctl_result;
 }
