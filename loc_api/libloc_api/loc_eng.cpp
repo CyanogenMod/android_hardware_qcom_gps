@@ -541,7 +541,7 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    fix_criteria_ptr->min_interval = min_interval;
    fix_criteria_ptr->preferred_accuracy = 50;
 
-    if (!(supl_host_set || c2k_host_set)) {
+    if (!(supl_host_set || c2k_host_set || loc_c2k_addr_is_set)) {
         mode = GPS_POSITION_MODE_STANDALONE;
     }
 
@@ -1844,6 +1844,7 @@ static int loc_eng_set_server(AGpsType type, const char* hostname, int port)
             sizeof server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr);
       LOC_LOGD ("loc_eng_set_server, addr = %s\n", server_info_ptr->addr_info.rpc_loc_server_addr_u_type_u.url.addr);
 #endif /* #if (AMSS_VERSION==3200||AMSS_VERSION==20000) */
+      supl_host_set = 1;
       break;
 
    case AGPS_TYPE_C2K:
