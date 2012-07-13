@@ -1,6 +1,8 @@
 ifneq ($(BUILD_TINY_ANDROID),true)
 
 ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_AMSS_VERSION),50001)
+$(shell mkdir -p $(OUT)/obj/STATIC_LIBRARIES/libcommondefs-rpc_intermediates/)
+$(shell touch $(OUT)/obj/STATIC_LIBRARIES/libcommondefs-rpc_intermediates/export_includes)
 
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
