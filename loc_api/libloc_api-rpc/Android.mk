@@ -8,6 +8,9 @@
 
 ifneq ($(BUILD_TINY_ANDROID),true)
 
+$(shell mkdir -p $(OUT)/obj/STATIC_LIBRARIES/libcommondefs-rpc_intermediates/)
+$(shell touch $(OUT)/obj/STATIC_LIBRARIES/libcommondefs-rpc_intermediates/export_includes)
+
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 

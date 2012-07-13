@@ -523,7 +523,7 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    rpc_loc_ioctl_e_type         ioctl_type = RPC_LOC_IOCTL_SET_FIX_CRITERIA;
    boolean                      ret_val;
 
-   LOGD ("loc_eng_set_position mode, client = %d, interval = %d, mode = %d\n",
+   LOC_LOGD ("loc_eng_set_position mode, client = %d, interval = %d, mode = %d\n",
             (int32) loc_eng_data.client_handle, min_interval, mode);
 
    fix_criteria_ptr = &ioctl_data.rpc_loc_ioctl_data_u_type_u.fix_criteria;
@@ -2087,7 +2087,7 @@ static int loc_eng_set_gps_lock(rpc_loc_lock_e_type lock_type)
     rpc_loc_ioctl_data_u_type    ioctl_data;
     boolean                      ret_val;
 
-    LOGD ("loc_eng_set_gps_lock mode, client = %d, lock_type = %d\n",
+    LOC_LOGD ("loc_eng_set_gps_lock mode, client = %d, lock_type = %d\n",
             (int32) loc_eng_data.client_handle, lock_type);
 
     ioctl_data.rpc_loc_ioctl_data_u_type_u.engine_lock = lock_type;
