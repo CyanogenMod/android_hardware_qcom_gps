@@ -1,0 +1,11 @@
+Change-Id: I8786f8689a51f608f6bbf4c4eb011c5a1b16e524
+Code-Review+2: Steve Kondik <shade@chemlab.org>
+Verified+1: Steve Kondik <shade@chemlab.org>
+Code-Review+1: David Gasaway <ponsasinorem@gmail.com>
+Code-Review+1: Ethan Chen <intervigil@gmail.com>
+Code-Review+1: Scott Busche <swbusche@gmail.com>
+Submitted-by: Steve Kondik <shade@chemlab.org>
+Submitted-at: Thu, 22 Nov 2012 03:30:54 -0800
+Reviewed-on: http://review.cyanogenmod.org/26293
+Project: CyanogenMod/android_hardware_qcom_gps
+Branch: refs/heads/jellybean
