@@ -231,7 +231,7 @@ struct BITSubscriber : public Subscriber {
         Subscriber(ipv4, stateMachine)
     {
         if (NULL == ipv6) {
-            ipv6Addr[0] = NULL;
+            ipv6Addr[0] = '\0';
         } else {
             memcpy(ipv6Addr, ipv6, sizeof(ipv6Addr));
         }
