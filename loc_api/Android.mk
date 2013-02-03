@@ -10,6 +10,8 @@ ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
 
 LOCAL_PATH := $(call my-dir)
 
+ifeq ($(filter 50000 20000,$(BOARD_VENDOR_QCOM_GPS_LOC_API_AMSS_VERSION)),)
+
 GPS_DIR_LIST :=
 
 ifeq (exists, $(shell test -d $(TOP)/vendor/qcom/proprietary/qmi-framework && echo exists))
@@ -34,4 +36,10 @@ GPS_DIR_LIST += $(LOCAL_PATH)/libloc_api_50001/
 #call the subfolders
 include $(addsuffix Android.mk, $(GPS_DIR_LIST))
 
+
+else # BOARD_VENDOR_QCOM_GPS_LOC_API_AMSS_VERSION == 50001
+GPS_DIR_LIST += $(LOCAL_PATH)/libloc_api-rpc/
+GPS_DIR_LIST += $(LOCAL_PATH)/libloc_api/
+include $(addsuffix Android.mk, $(GPS_DIR_LIST))
+endif
 endif#BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
