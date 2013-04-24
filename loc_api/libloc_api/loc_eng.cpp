@@ -257,6 +257,7 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    pthread_mutex_init(&loc_eng_data.deferred_action_mutex, NULL);
    pthread_cond_init(&loc_eng_data.deferred_action_cond, NULL);
 
+   pthread_mutex_init (&(loc_eng_data.deferred_stop_mutex), NULL);
 
    // Open client
    rpc_loc_event_mask_type event = RPC_LOC_EVENT_PARSED_POSITION_REPORT |
@@ -370,8 +371,11 @@ static void loc_eng_cleanup()
       loc_eng_data.deferred_action_thread = NULL;
    }
 
-   pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
+   pthread_mutex_destroy (&loc_eng_data.xtra_module_data.lock);
+   pthread_mutex_destroy (&loc_eng_data.deferred_stop_mutex);
    pthread_cond_destroy  (&loc_eng_data.deferred_action_cond);
+   pthread_mutex_destroy (&loc_eng_data.deferred_action_mutex);
+   pthread_mutex_destroy (&loc_eng_data.mute_session_lock);
 }
 
 
@@ -433,6 +437,17 @@ static int loc_eng_stop()
 
    int ret_val;
    LOC_LOGD("loc_eng_stop called");
+   pthread_mutex_lock(&(loc_eng_data.deferred_stop_mutex));
+    // work around problem with loc_eng_stop when AGPS requests are pending
+    // we defer stopping the engine until the AGPS request is done
+    if (loc_eng_data.agps_request_pending)
+   {
+        loc_eng_data.stop_request_pending = true;
+        LOC_LOGD("loc_eng_stop - deferring stop until AGPS data call is finished\n");
+        pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
+        return 0;
+    }
+   pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
 
    ret_val = loc_stop_fix(loc_eng_data.client_handle);
    if (ret_val != RPC_LOC_API_SUCCESS)
@@ -440,10 +455,16 @@ static int loc_eng_stop()
       LOC_LOGE("loc_eng_stop error, rc = %d\n", ret_val);
    }
    else {
-      if (loc_eng_data.fix_session_status != GPS_STATUS_SESSION_BEGIN)
+      // end fix session (rpc reported sessions happen every interval w/ fix)
+      if (loc_eng_data.fix_session_status != GPS_STATUS_SESSION_END)
       {
-         loc_inform_gps_status(GPS_STATUS_SESSION_END);
+         loc_eng_data.fix_session_status = GPS_STATUS_SESSION_END;
+
+	 // ENGINE_OFF imples FIX_SESSION_END
+	 if (loc_eng_data.engine_status != GPS_STATUS_ENGINE_OFF)
+            loc_inform_gps_status(loc_eng_data.fix_session_status);
       }
+
       loc_eng_data.navigating = FALSE;
    }
 
@@ -521,6 +542,10 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    fix_criteria_ptr->min_interval = min_interval;
    fix_criteria_ptr->preferred_accuracy = 50;
 
+    if (!(supl_host_set || c2k_host_set)) {
+        mode = GPS_POSITION_MODE_STANDALONE;
+    }
+
    switch (mode)
    {
    case GPS_POSITION_MODE_MS_BASED:
@@ -540,6 +565,11 @@ static int  loc_eng_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
    if (min_interval > 0) {
         fix_criteria_ptr->min_interval = min_interval;
         fix_criteria_ptr->valid_mask |= RPC_LOC_FIX_CRIT_VALID_MIN_INTERVAL;
+    }else if(min_interval == 0)
+    {
+        /*If the framework passes in 0 transalate it into the maximum frequency we can report positions
+          which is 1 Hz or once very second */
+        fix_criteria_ptr->min_interval = MIN_POSSIBLE_FIX_INTERVAL;
     }
     if (preferred_accuracy > 0) {
         fix_criteria_ptr->preferred_accuracy = preferred_accuracy;
@@ -1180,35 +1210,55 @@ SIDE EFFECTS
 ===========================================================================*/
 static void loc_eng_report_status (const rpc_loc_status_event_s_type *status_report_ptr)
 {
-   GpsStatusValue status,status_internal;
+   GpsStatusValue engine_status = loc_eng_data.engine_status;
+   GpsStatusValue fix_session_status = loc_eng_data.fix_session_status;
 
-   // LOC_LOGD("loc_eng_report_status: event = %d\n", status_report_ptr->event);
-   status = GPS_STATUS_NONE;
+//   LOC_LOGD("loc_eng_report_status: event = %d\n", status_report_ptr->event);
+   if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE)
+   {
+      rpc_loc_engine_state_e_type state =
+         status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.engine_state;
+      if (state == RPC_LOC_ENGINE_STATE_ON)
+      {
+         loc_eng_data.engine_status = GPS_STATUS_ENGINE_ON;
+      }
+      else
+      {
+         // engine off implies fix session end
+         loc_eng_data.engine_status = GPS_STATUS_ENGINE_OFF;
+         loc_eng_data.fix_session_status = GPS_STATUS_SESSION_END;
+      }
+   }
+   else if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_FIX_SESSION_STATE)
+   {
+      rpc_loc_fix_session_state_e_type state =
+         status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.fix_session_state;
+      if (state == RPC_LOC_FIX_SESSION_STATE_BEGIN)
+      {
+         // fix session begin implies engine on
+         loc_eng_data.engine_status = GPS_STATUS_ENGINE_ON;
+         loc_eng_data.fix_session_status = GPS_STATUS_SESSION_BEGIN;
+      }
 
+      // ignore FIX_SESSION_STATE_END; there is a begin/end pair for
+      // every location report, and we only want the overall session.
+   }
 
-  if (status_report_ptr->event == RPC_LOC_STATUS_EVENT_ENGINE_STATE)
-    {
-        if (status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.engine_state == RPC_LOC_ENGINE_STATE_ON)
-        {
-            // GPS_STATUS_SESSION_BEGIN implies GPS_STATUS_ENGINE_ON
-            status = GPS_STATUS_SESSION_BEGIN;
-            status_internal = GPS_STATUS_ENGINE_ON;
-            loc_inform_gps_status(status);
-        }
-        else if (status_report_ptr->payload.rpc_loc_status_event_payload_u_type_u.engine_state == RPC_LOC_ENGINE_STATE_OFF)
-        {
-            // GPS_STATUS_SESSION_END implies GPS_STATUS_ENGINE_OFF
-            status = GPS_STATUS_ENGINE_OFF;
-            status_internal = GPS_STATUS_ENGINE_OFF;
-            loc_inform_gps_status(status);
-        }
-    }
+   // report changed status
 
-#if 0
+   // FIX_SESSION_BEGIN implies ENGINE_ON
+   if (loc_eng_data.fix_session_status != GPS_STATUS_SESSION_BEGIN
+         && engine_status != loc_eng_data.engine_status)
+      loc_inform_gps_status(loc_eng_data.engine_status);
+
+   // ENGINE_OFF implies FIX_SESSION_END
+   if (loc_eng_data.engine_status != GPS_STATUS_ENGINE_OFF
+         && fix_session_status != loc_eng_data.fix_session_status)
+      loc_inform_gps_status(loc_eng_data.fix_session_status);
+
    pthread_mutex_lock(&loc_eng_data.mute_session_lock);
-
-   // Switch from WAIT to MUTE, for "engine on" or "session begin" event
-   if (status == GPS_STATUS_SESSION_BEGIN || status == GPS_STATUS_ENGINE_ON)
+   // Switch from WAIT to MUTE, for "engine on" event
+   if (loc_eng_data.engine_status == GPS_STATUS_ENGINE_ON)
    {
       if (loc_eng_data.mute_session_state == LOC_MUTE_SESS_WAIT)
       {
@@ -1216,43 +1266,17 @@ static void loc_eng_report_status (const rpc_loc_status_event_s_type *status_rep
          loc_eng_data.mute_session_state = LOC_MUTE_SESS_IN_SESSION;
       }
    }
-
    // Switch off MUTE session
-   if (loc_eng_data.mute_session_state == LOC_MUTE_SESS_IN_SESSION &&
-       (status == GPS_STATUS_SESSION_END || status == GPS_STATUS_ENGINE_OFF))
+   else if (loc_eng_data.engine_status == GPS_STATUS_ENGINE_OFF)
    {
-      LOC_LOGV("loc_eng_report_status: mute_session_state changed from IN SESSION to NONE");
-      loc_eng_data.mute_session_state = LOC_MUTE_SESS_NONE;
-   }
-
-   // Session End is not reported during Android navigating state
-   if (status != GPS_STATUS_NONE && !(status == GPS_STATUS_SESSION_END && loc_eng_data.navigating))
-   {
-      LOC_LOGV("loc_eng_report_status: issue callback with status %d\n", status);
-
-      if (loc_eng_data.mute_session_state != LOC_MUTE_SESS_IN_SESSION)
+      if (loc_eng_data.mute_session_state == LOC_MUTE_SESS_IN_SESSION)
       {
-         // Inform GpsLocationProvider about mNavigating status
-         loc_inform_gps_status(status);
-      }
-      else {
-         LOC_LOGV("loc_eng_report_status: muting the status report.");
+         LOC_LOGV("loc_eng_report_status: mute_session_state changed from IN SESSION to NONE");
+         loc_eng_data.mute_session_state = LOC_MUTE_SESS_NONE;
       }
    }
-
    pthread_mutex_unlock(&loc_eng_data.mute_session_lock);
-#endif
-   // Only keeps ENGINE ON/OFF in engine_status
-   if (status != GPS_STATUS_NONE && (status_internal == GPS_STATUS_ENGINE_ON || status_internal == GPS_STATUS_ENGINE_OFF))
-   {
-      loc_eng_data.engine_status = status_internal;
-   }
 
-   // Only keeps SESSION BEGIN/END in fix_session_status
-   if (status != GPS_STATUS_NONE && (status_internal == GPS_STATUS_SESSION_BEGIN || status_internal == GPS_STATUS_SESSION_END))
-   {
-      loc_eng_data.fix_session_status = status_internal;
-   }
 
    pthread_mutex_lock (&loc_eng_data.deferred_action_mutex);
 
@@ -1333,6 +1357,7 @@ static void loc_eng_process_conn_request (const rpc_loc_server_request_s_type *s
    {
       loc_eng_data.agps_status = GPS_REQUEST_AGPS_DATA_CONN;
       loc_eng_data.conn_handle = server_request_ptr->payload.rpc_loc_server_request_u_type_u.open_req.conn_handle;
+      loc_eng_data.agps_request_pending = false;
    }
    else
    {
@@ -1366,7 +1391,7 @@ SIDE EFFECTS
 static void loc_eng_process_loc_event (rpc_loc_event_mask_type loc_event,
         rpc_loc_event_payload_u_type* loc_event_payload)
 {
-   LOC_LOGD("loc_eng_process_loc_event: %x\n", loc_event);
+   LOC_LOGD("loc_eng_process_loc_event: %llx\n", (unsigned long long)loc_event);
    // Parsed report
    if ( (loc_event & RPC_LOC_EVENT_PARSED_POSITION_REPORT) &&
          loc_eng_data.mute_session_state != LOC_MUTE_SESS_IN_SESSION)
@@ -2140,6 +2165,7 @@ static void loc_eng_deferred_action_thread(void* arg)
      // copy anything we need before releasing the mutex
       loc_event = loc_eng_data.loc_event;
       if (loc_event != 0) {
+          LOC_LOGD("loc_eng_deferred_action_thread event %llu\n",loc_event);
           memcpy(&loc_event_payload, &loc_eng_data.loc_event_payload, sizeof(loc_event_payload));
           loc_eng_data.loc_event = 0;
       }
@@ -2168,11 +2194,7 @@ static void loc_eng_deferred_action_thread(void* arg)
       if (loc_eng_data.engine_status != GPS_STATUS_ENGINE_ON &&
           loc_eng_data.xtra_module_data.xtra_data_for_injection != NULL)
       {
-         pthread_mutex_unlock(&loc_eng_data.deferred_action_mutex);
-
          loc_eng_inject_xtra_data_in_buffer();
-
-         pthread_mutex_lock(&loc_eng_data.deferred_action_mutex);
       }
 
       //Process connectivity manager events at this point
@@ -2197,6 +2219,24 @@ static void loc_eng_deferred_action_thread(void* arg)
          }
          loc_eng_data.data_connection_is_on = FALSE;
       }
+      if (flags & (DEFERRED_ACTION_AGPS_DATA_SUCCESS |
+                   DEFERRED_ACTION_AGPS_DATA_CLOSED |
+                   DEFERRED_ACTION_AGPS_DATA_FAILED))
+      {
+          pthread_mutex_lock(&(loc_eng_data.deferred_stop_mutex));
+          // work around problem with loc_eng_stop when AGPS requests are pending
+          // we defer stopping the engine until the AGPS request is done
+          loc_eng_data.agps_request_pending = false;
+          if (loc_eng_data.stop_request_pending)
+           {
+              LOC_LOGD ("handling deferred stop\n");
+              if (loc_stop_fix(loc_eng_data.client_handle) != RPC_LOC_API_SUCCESS)
+               {
+                   LOC_LOGD ("loc_stop_fix failed!\n");
+               }
+           }
+           pthread_mutex_unlock(&(loc_eng_data.deferred_stop_mutex));
+       }
 
       // ATL open/close actions
       if (status != 0 )
