@@ -60,6 +60,7 @@ typedef unsigned char boolean;
 //To signify that when requesting a data connection HAL need not specify whether CDMA or UMTS
 #define DONT_CARE                 0
 
+#define MIN_POSSIBLE_FIX_INTERVAL 1000 /* msec */
 enum loc_mute_session_e_type {
    LOC_MUTE_SESS_NONE,
    LOC_MUTE_SESS_WAIT,
@@ -90,6 +91,10 @@ typedef struct
    gps_acquire_wakelock           acquire_wakelock_cb;
    gps_release_wakelock           release_wakelock_cb;
    AGpsStatusValue                agps_status;
+   // used to defer stopping the GPS engine until AGPS data calls are done
+   boolean                         agps_request_pending;
+   boolean                         stop_request_pending;
+   pthread_mutex_t                 deferred_stop_mutex;
    loc_eng_xtra_data_s_type       xtra_module_data;
    // data from loc_event_cb
    rpc_loc_event_mask_type        loc_event;
