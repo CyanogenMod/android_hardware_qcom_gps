@@ -78,7 +78,7 @@ pthread_mutex_t            user_cb_data_mutex   = PTHREAD_MUTEX_INITIALIZER;
  *                             FUNCTION DECLARATIONS
  *
  *============================================================================*/
-static void loc_ni_thread_proc(void *unused);
+static void* loc_ni_thread_proc(void *threadid);
 /*===========================================================================
 
 FUNCTION respond_from_enum
@@ -522,7 +522,22 @@ static void loc_ni_request_handler(const char *msg, const rpc_loc_ni_event_s_typ
        **/
       loc_eng_ni_data.response_time_left = 5 + (notif.timeout != 0 ? notif.timeout : LOC_NI_NO_RESPONSE_TIME);
       LOC_LOGI("Automatically sends 'no response' in %d seconds (to clear status)\n", loc_eng_ni_data.response_time_left);
-      loc_eng_ni_data.callbacks_ref->create_thread_cb("loc_api_ni", loc_ni_thread_proc, NULL);
+
+      /* @todo may required when android framework issue is fixed
+       * loc_eng_ni_data.callbacks_ref->create_thread_cb("loc_api_ni", loc_ni_thread_proc, NULL);
+       */
+
+      int rc = 0;
+      rc = pthread_create(&loc_eng_ni_data.loc_ni_thread, NULL, loc_ni_thread_proc, NULL);
+      if (rc)
+      {
+         LOC_LOGE("Loc NI thread is not created.\n");
+      }
+      rc = pthread_detach(loc_eng_ni_data.loc_ni_thread);
+      if (rc)
+      {
+         LOC_LOGE("Loc NI thread is not detached.\n");
+      }
       pthread_mutex_unlock(&loc_eng_ni_data.loc_ni_lock);
 
       /* Notify callback */
@@ -623,7 +638,7 @@ int loc_eng_ni_callback (
 FUNCTION loc_ni_thread_proc
 
 ===========================================================================*/
-static void loc_ni_thread_proc(void *unused)
+static void* loc_ni_thread_proc(void *threadid)
 {
    int rc = 0;          /* return code from pthread calls */
 
@@ -662,6 +677,7 @@ static void loc_ni_thread_proc(void *unused)
    loc_eng_ni_data.response_time_left = 0;
    loc_eng_ni_data.current_notif_id = -1;
    pthread_mutex_unlock(&loc_eng_ni_data.loc_ni_lock);
+   return NULL;
 }
 
 /*===========================================================================
@@ -689,7 +705,7 @@ void loc_eng_ni_init(GpsNiCallbacks *callbacks)
       pthread_mutex_init(&loc_eng_ni_data.loc_ni_lock, NULL);
       loc_eng_ni_data_init = TRUE;
    }
-   loc_eng_ni_data.callbacks_ref = callbacks;
+
    loc_eng_ni_data.notif_in_progress = FALSE;
    loc_eng_ni_data.current_notif_id = -1;
    loc_eng_ni_data.response_time_left = 0;
