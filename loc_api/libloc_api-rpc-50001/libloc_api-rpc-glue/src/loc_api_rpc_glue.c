@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -57,13 +57,21 @@
 /* Logging */
 #define LOG_TAG "LocSvc_api_rpc_glue"
 #define LOG_NDDEBUG 0
+#ifndef USE_GLIB
 #include <utils/Log.h>
+#endif /* USE_GLIB */
 
 /* Logging Improvement */
 #include "log_util.h"
+#include "platform_lib_includes.h"
+/*Maximum number of Modem init*/
+#define RPC_TRY_NUM 10
 
-/* Uncomment to force LOGD messages */
-// #define LOGD LOGI
+/*Maximum number of Modem init*/
+#define RPC_TRY_NUM 10
+
+/* Uncomment to force ALOGD messages */
+// #define ALOGD ALOGI
 
 /*=====================================================================
      External declarations
@@ -308,6 +316,7 @@ rpc_loc_client_handle_type loc_open (
     void*                         userData
 )
 {
+    int try_num = RPC_TRY_NUM;
     ENTRY_LOG();
     LOC_GLUE_CHECK_INIT(rpc_loc_client_handle_type);
 
@@ -316,30 +325,23 @@ rpc_loc_client_handle_type loc_open (
     rpc_loc_open_args args;
     args.event_reg_mask = event_reg_mask;
 
-    int i;
+    int i, j = LOC_API_CB_MAX_CLIENTS;
     for (i = 0; i < LOC_API_CB_MAX_CLIENTS; i++)
     {
-        if (loc_glue_callback_table[i].cb_func == event_callback ||
-            loc_glue_callback_table[i].user == userData)
+        if (loc_glue_callback_table[i].user == userData)
         {
             LOC_LOGW("Client already opened service (callback=%p)...\n",
                   event_callback);
             break;
+        } else if (j == LOC_API_CB_MAX_CLIENTS &&
+                   loc_glue_callback_table[i].user == NULL) {
+            j = i;
         }
     }
 
     if (i == LOC_API_CB_MAX_CLIENTS)
     {
-        for (i = 0; i < LOC_API_CB_MAX_CLIENTS; i++)
-        {
-            if (loc_glue_callback_table[i].cb_func == NULL)
-            {
-                loc_glue_callback_table[i].cb_func = event_callback;
-                loc_glue_callback_table[i].rpc_cb = rpc_cb;
-                loc_glue_callback_table[i].user = userData;
-                break;
-            }
-        }
+        i = j;
     }
 
     if (i == LOC_API_CB_MAX_CLIENTS)
@@ -348,6 +350,10 @@ rpc_loc_client_handle_type loc_open (
         return RPC_LOC_CLIENT_HANDLE_INVALID;
     }
 
+    loc_glue_callback_table[i].cb_func = event_callback;
+    loc_glue_callback_table[i].rpc_cb = rpc_cb;
+    loc_glue_callback_table[i].user = userData;
+
     args.event_callback = loc_glue_callback_table[i].cb_id;
     LOC_LOGV("cb_id=%d, func=0x%x", i, (unsigned int) event_callback);
 
@@ -355,13 +361,21 @@ rpc_loc_client_handle_type loc_open (
     enum clnt_stat stat = RPC_SUCCESS;
 
     EXIT_LOG_CALLFLOW(%s, "loc client open");
-    stat = RPC_FUNC_VERSION(rpc_loc_open_, RPC_LOC_OPEN_VERSION)(&args, &rets, loc_api_clnt);
+
+     /*try more for rpc_loc_open_xx()*/
+
+    do
+    {
+        stat = RPC_FUNC_VERSION(rpc_loc_open_, RPC_LOC_OPEN_VERSION)(&args, &rets, loc_api_clnt);
+        ret_val = (rpc_loc_client_handle_type) rets.loc_open_result;
+        try_num--;
+
+    }while( (RPC_SUCCESS != stat||0 > ret_val) && 0 != try_num );
+
     LOC_GLUE_CHECK_RESULT(stat, int32);
 
     /* save the handle in the table */
     loc_glue_callback_table[i].handle = (rpc_loc_client_handle_type) rets.loc_open_result;
-
-    ret_val = (rpc_loc_client_handle_type) rets.loc_open_result;
 
     return ret_val;
 
@@ -405,6 +419,7 @@ void loc_clear(rpc_loc_client_handle_type handle) {
             loc_glue_callback_table[i].cb_func = NULL;
             loc_glue_callback_table[i].rpc_cb = NULL;
             loc_glue_callback_table[i].handle = -1;
+            loc_glue_callback_table[i].user = NULL;
             break;
         }
     }

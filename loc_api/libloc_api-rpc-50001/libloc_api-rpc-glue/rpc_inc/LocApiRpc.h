@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011,2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -26,22 +26,33 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#ifndef LOC_API_RPC_ADAPTER_H
-#define LOC_API_RPC_ADAPTER_H
+#ifndef LOC_API_RPC_H
+#define LOC_API_RPC_H
 
 #include <rpc/rpc.h>
+#include <loc_api_rpcgen_common_rpc.h>
 #include <loc_api_rpc_glue.h>
-#include <LocApiAdapter.h>
+#include <LocApiBase.h>
+#include <loc_log.h>
 
+using namespace loc_core;
 
-class LocApiRpcAdapter : public LocApiAdapter {
+class LocApiRpc : public LocApiBase {
+protected:
     // RPC communication establishment
     rpc_loc_client_handle_type client_handle;
-    rpc_loc_event_mask_type eMask;
 
+private:
+    int dataEnableLastSet;
+    char apnLastSet[MAX_APN_LEN];
+
+    static const LOC_API_ADAPTER_EVENT_MASK_T maskAll;
     static const rpc_loc_event_mask_type locBits[];
     static rpc_loc_event_mask_type convertMask(LOC_API_ADAPTER_EVENT_MASK_T mask);
     static enum loc_api_adapter_err convertErr(int rpcErr);
+    static GpsNiEncodingType convertNiEncodingType(int loc_encoding);
+    static int NIEventFillVerfiyType(GpsNiNotification &notif,
+                              rpc_loc_ni_notify_verify_e_type notif_priv);
 
     void reportPosition(const rpc_loc_parsed_position_s_type *location_report_ptr);
     void reportSv(const rpc_loc_gnss_info_s_type *gnss_report_ptr);
@@ -49,15 +60,19 @@ class LocApiRpcAdapter : public LocApiAdapter {
     void reportNmea(const rpc_loc_nmea_report_s_type *nmea_report_ptr);
     void ATLEvent(const rpc_loc_server_request_s_type *server_request_ptr);
     void NIEvent(const rpc_loc_ni_event_s_type *ni_req_ptr);
-    int NIEventFillVerfiyType(GpsNiNotification &notif,
-                              rpc_loc_ni_notify_verify_e_type notif_priv);
-    GpsNiEncodingType convertNiEncodingType(int loc_encoding);
+
+protected:
+    virtual enum loc_api_adapter_err
+        open(LOC_API_ADAPTER_EVENT_MASK_T mask);
+    virtual enum loc_api_adapter_err
+        close();
 
 public:
-    LocApiRpcAdapter(LocEng &locEng);
-    ~LocApiRpcAdapter();
+    LocApiRpc(const MsgTask* msgTask,
+              LOC_API_ADAPTER_EVENT_MASK_T exMask);
+    ~LocApiRpc();
 
-    int locEventCB(rpc_loc_client_handle_type client_handle,
+    virtual int locEventCB(rpc_loc_client_handle_type client_handle,
                    rpc_loc_event_mask_type loc_event,
                    const rpc_loc_event_payload_u_type* loc_event_payload);
 
@@ -65,16 +80,15 @@ public:
 
     // RPC adapter interface implementations
     virtual enum loc_api_adapter_err
-        reinit();
-    virtual enum loc_api_adapter_err
-        startFix();
+        startFix(const LocPosMode& posMode);
     virtual enum loc_api_adapter_err
         stopFix();
     virtual enum loc_api_adapter_err
-        setPositionMode(LocPositionMode mode, GpsPositionRecurrence recurrence,
-            uint32_t min_interval, uint32_t preferred_accuracy, uint32_t preferred_time);
+        setPositionMode(const LocPosMode& mode);
+    inline virtual enum loc_api_adapter_err
+        enableData(int enable) { return enableData(enable, false); }
     virtual enum loc_api_adapter_err
-        enableData(int enable);
+        enableData(int enable, boolean force);
     virtual enum loc_api_adapter_err
         setTime(GpsUtcTime time, int64_t timeReference, int uncertainty);
     virtual enum loc_api_adapter_err
@@ -83,8 +97,10 @@ public:
         deleteAidingData(GpsAidingData f);
     virtual enum loc_api_adapter_err
         informNiResponse(GpsUserResponseType userResponse, const void* passThroughData);
+    inline virtual enum loc_api_adapter_err
+        setAPN(char* apn, int len) { return setAPN(apn, len, false); }
     virtual enum loc_api_adapter_err
-        setAPN(char* apn, int len);
+        setAPN(char* apn, int len, boolean force);
     virtual enum loc_api_adapter_err
         setServer(const char* url, int len);
     virtual enum loc_api_adapter_err
@@ -92,11 +108,18 @@ public:
     virtual enum loc_api_adapter_err
         setXtraData(char* data, int length);
     virtual enum loc_api_adapter_err
+        requestXtraServer();
+    virtual enum loc_api_adapter_err
         atlOpenStatus(int handle, int is_succ, char* apn, AGpsBearerType bear, AGpsType agpsType);
     virtual enum loc_api_adapter_err
         atlCloseStatus(int handle, int is_succ);
     virtual enum loc_api_adapter_err
         setSUPLVersion(uint32_t version);
+
+    virtual void setInSession(bool inSession);
 };
 
-#endif //LOC_API_RPC_ADAPTER_H
+extern "C" LocApiBase* getLocApi(const MsgTask* msgTask,
+                                 LOC_API_ADAPTER_EVENT_MASK_T exMask);
+
+#endif //LOC_API_RPC_H

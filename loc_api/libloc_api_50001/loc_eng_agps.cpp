@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -33,8 +33,10 @@
 #include <loc_eng_agps.h>
 #include <loc_eng_log.h>
 #include <log_util.h>
+#include <platform_lib_includes.h>
 #include <loc_eng_dmn_conn_handler.h>
 #include <loc_eng_dmn_conn.h>
+#include <sys/time.h>
 
 //======================================================================
 // C callbacks
@@ -84,10 +86,10 @@ static bool notifySubscriber(void* fromCaller, void* fromList)
 const int Notification::BROADCAST_ALL = 0x80000000;
 const int Notification::BROADCAST_ACTIVE = 0x80000001;
 const int Notification::BROADCAST_INACTIVE = 0x80000002;
-
-
+const unsigned char DSStateMachine::MAX_START_DATA_CALL_RETRIES = 4;
+const unsigned int DSStateMachine::DATA_CALL_RETRY_DELAY_MSEC = 500;
 //======================================================================
-// Subscriber:  BITSubscriber / ATLSubscriber
+// Subscriber:  BITSubscriber / ATLSubscriber / WIFISubscriber
 //======================================================================
 bool Subscriber::forMe(Notification &notification)
 {
@@ -107,7 +109,7 @@ bool BITSubscriber::equals(const Subscriber *s) const
 
     return (ID == bitS->ID &&
             (INADDR_NONE != (unsigned int)ID ||
-             0 == strncmp(ipv6Addr, bitS->ipv6Addr, sizeof(ipv6Addr))));
+             0 == strncmp(mIPv6Addr, bitS->mIPv6Addr, sizeof(mIPv6Addr))));
 }
 
 bool BITSubscriber::notifyRsrcStatus(Notification &notification)
@@ -120,14 +122,17 @@ bool BITSubscriber::notifyRsrcStatus(Notification &notification)
         case RSRC_UNSUBSCRIBE:
         case RSRC_RELEASED:
             loc_eng_dmn_conn_loc_api_server_data_conn(
+                LOC_ENG_IF_REQUEST_SENDER_ID_GPSONE_DAEMON,
                 GPSONE_LOC_API_IF_RELEASE_SUCCESS);
             break;
         case RSRC_DENIED:
             loc_eng_dmn_conn_loc_api_server_data_conn(
+                LOC_ENG_IF_REQUEST_SENDER_ID_GPSONE_DAEMON,
                 GPSONE_LOC_API_IF_FAILURE);
             break;
         case RSRC_GRANTED:
             loc_eng_dmn_conn_loc_api_server_data_conn(
+                LOC_ENG_IF_REQUEST_SENDER_ID_GPSONE_DAEMON,
                 GPSONE_LOC_API_IF_REQUEST_SUCCESS);
             break;
         default:
@@ -147,23 +152,27 @@ bool ATLSubscriber::notifyRsrcStatus(Notification &notification)
         {
         case RSRC_UNSUBSCRIBE:
         case RSRC_RELEASED:
-            ((LocApiAdapter*)mLocAdapter)->atlCloseStatus(ID, 1);
+            ((LocEngAdapter*)mLocAdapter)->atlCloseStatus(ID, 1);
             break;
         case RSRC_DENIED:
-            ((LocApiAdapter*)mLocAdapter)->atlOpenStatus(ID, 0,
+        {
+            AGpsExtType type = mBackwardCompatibleMode ?
+                              AGPS_TYPE_INVALID : mStateMachine->getType();
+            ((LocEngAdapter*)mLocAdapter)->atlOpenStatus(ID, 0,
                                             (char*)mStateMachine->getAPN(),
-#ifdef QCOM_FEATURE_IPV6
                                             mStateMachine->getBearer(),
-#endif
-                                            mStateMachine->getType());
+                                            type);
+        }
             break;
         case RSRC_GRANTED:
-            ((LocApiAdapter*)mLocAdapter)->atlOpenStatus(ID, 1,
+        {
+            AGpsExtType type = mBackwardCompatibleMode ?
+                              AGPS_TYPE_INVALID : mStateMachine->getType();
+            ((LocEngAdapter*)mLocAdapter)->atlOpenStatus(ID, 1,
                                             (char*)mStateMachine->getAPN(),
-#ifdef QCOM_FEATURE_IPV6
                                             mStateMachine->getBearer(),
-#endif
-                                            mStateMachine->getType());
+                                            type);
+        }
             break;
         default:
             notify = false;
@@ -173,7 +182,60 @@ bool ATLSubscriber::notifyRsrcStatus(Notification &notification)
     return notify;
 }
 
+bool WIFISubscriber::notifyRsrcStatus(Notification &notification)
+{
+    bool notify = forMe(notification);
 
+    if (notify) {
+        switch(notification.rsrcStatus)
+        {
+        case RSRC_UNSUBSCRIBE:
+            break;
+        case RSRC_RELEASED:
+            loc_eng_dmn_conn_loc_api_server_data_conn(
+                senderId,
+                GPSONE_LOC_API_IF_RELEASE_SUCCESS);
+            break;
+        case RSRC_DENIED:
+            loc_eng_dmn_conn_loc_api_server_data_conn(
+                senderId,
+                GPSONE_LOC_API_IF_FAILURE);
+            break;
+        case RSRC_GRANTED:
+            loc_eng_dmn_conn_loc_api_server_data_conn(
+                senderId,
+                GPSONE_LOC_API_IF_REQUEST_SUCCESS);
+            break;
+        default:
+            notify = false;
+        }
+    }
+
+    return notify;
+}
+bool DSSubscriber::notifyRsrcStatus(Notification &notification)
+{
+    bool notify = forMe(notification);
+    LOC_LOGD("DSSubscriber::notifyRsrcStatus. notify:%d \n",(int)(notify));
+    if(notify) {
+        switch(notification.rsrcStatus) {
+        case RSRC_UNSUBSCRIBE:
+        case RSRC_RELEASED:
+        case RSRC_DENIED:
+        case RSRC_GRANTED:
+            ((DSStateMachine *)mStateMachine)->informStatus(notification.rsrcStatus, ID);
+            break;
+        default:
+            notify = false;
+        }
+    }
+    return notify;
+}
+void DSSubscriber :: setInactive()
+{
+    mIsInactive = true;
+    ((DSStateMachine *)mStateMachine)->informStatus(RSRC_UNSUBSCRIBE, ID);
+}
 //======================================================================
 // AgpsState:  AgpsReleasedState / AgpsPendingState / AgpsAcquiredState
 //======================================================================
@@ -195,13 +257,14 @@ public:
 
 AgpsState* AgpsReleasedState::onRsrcEvent(AgpsRsrcStatus event, void* data)
 {
+    LOC_LOGD("AgpsReleasedState::onRsrcEvent; event:%d\n", (int)event);
     if (mStateMachine->hasSubscribers()) {
         LOC_LOGE("Error: %s subscriber list not empty!!!", whoami());
         // I don't know how to recover from it.  I am adding this rather
         // for debugging purpose.
     }
 
-    AgpsState* nextState = this;;
+    AgpsState* nextState = this;
     switch (event)
     {
     case RSRC_SUBSCRIBE:
@@ -209,13 +272,16 @@ AgpsState* AgpsReleasedState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         // no notification until we get RSRC_GRANTED
         // but we need to add subscriber to the list
         mStateMachine->addSubscriber((Subscriber*)data);
-        // move the state to PENDING
-        nextState = mPendingState;
-
         // request from connecivity service for NIF
-        mStateMachine->sendRsrcRequest(GPS_REQUEST_AGPS_DATA_CONN);
+        //The if condition is added so that if the data call setup fails
+        //for DS State Machine, we want to retry in released state.
+        //for AGps State Machine, sendRsrcRequest() will always return success
+        if(!mStateMachine->sendRsrcRequest(GPS_REQUEST_AGPS_DATA_CONN)) {
+            // move the state to PENDING
+            nextState = mPendingState;
+        }
     }
-        break;
+    break;
 
     case RSRC_UNSUBSCRIBE:
     {
@@ -259,6 +325,7 @@ public:
 AgpsState* AgpsPendingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
 {
     AgpsState* nextState = this;;
+    LOC_LOGD("AgpsPendingState::onRsrcEvent; event:%d\n", (int)event);
     switch (event)
     {
     case RSRC_SUBSCRIBE:
@@ -276,26 +343,28 @@ AgpsState* AgpsPendingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         Subscriber* subscriber = (Subscriber*) data;
         if (subscriber->waitForCloseComplete()) {
             subscriber->setInactive();
-            if (!mStateMachine->hasActiveSubscribers()) {
-                // no more subscribers, move to RELEASED state
-                nextState = mReleasingState;
-            }
         } else {
             // auto notify this subscriber of the unsubscribe
             Notification notification(subscriber, event, true);
             mStateMachine->notifySubscribers(notification);
+        }
 
-            // now check if there is any subscribers left
-            if (!mStateMachine->hasSubscribers()) {
-                // no more subscribers, move to RELEASED state
-                nextState = mReleasedState;
+        // now check if there is any subscribers left
+        if (!mStateMachine->hasSubscribers()) {
+            // no more subscribers, move to RELEASED state
+            nextState = mReleasedState;
 
-                // tell connecivity service we can release NIF
-                mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
-            }
+            // tell connecivity service we can release NIF
+            mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
+        } else if (!mStateMachine->hasActiveSubscribers()) {
+            // only inactive subscribers, move to RELEASING state
+            nextState = mReleasingState;
+
+            // tell connecivity service we can release NIF
+            mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
         }
     }
-        break;
+    break;
 
     case RSRC_GRANTED:
     {
@@ -352,6 +421,7 @@ public:
 AgpsState* AgpsAcquiredState::onRsrcEvent(AgpsRsrcStatus event, void* data)
 {
     AgpsState* nextState = this;
+    LOC_LOGD("AgpsAcquiredState::onRsrcEvent; event:%d\n", (int)event);
     switch (event)
     {
     case RSRC_SUBSCRIBE:
@@ -381,13 +451,13 @@ AgpsState* AgpsAcquiredState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         // now check if there is any subscribers left
         if (!mStateMachine->hasSubscribers()) {
             // no more subscribers, move to RELEASED state
-            nextState = mReleasingState;
+            nextState = mReleasedState;
 
             // tell connecivity service we can release NIF
             mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
         } else if (!mStateMachine->hasActiveSubscribers()) {
-            // no more subscribers, move to RELEASED state
-            nextState = mReleasedState;
+            // only inactive subscribers, move to RELEASING state
+            nextState = mReleasingState;
 
             // tell connecivity service we can release NIF
             mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
@@ -444,7 +514,9 @@ public:
 AgpsState* AgpsReleasingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
 {
     AgpsState* nextState = this;;
-    switch (event)
+    LOC_LOGD("AgpsReleasingState::onRsrcEvent; event:%d\n", (int)event);
+
+   switch (event)
     {
     case RSRC_SUBSCRIBE:
     {
@@ -470,20 +542,13 @@ AgpsState* AgpsReleasingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         // now check if there is any subscribers left
         if (!mStateMachine->hasSubscribers()) {
             // no more subscribers, move to RELEASED state
-            nextState = mReleasingState;
-
-            // tell connecivity service we can release NIF
-            mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
-        } else if (!mStateMachine->hasActiveSubscribers()) {
-            // no more subscribers, move to RELEASED state
             nextState = mReleasedState;
-
-            // tell connecivity service we can release NIF
-            mStateMachine->sendRsrcRequest(GPS_RELEASE_AGPS_DATA_CONN);
         }
     }
         break;
 
+    case RSRC_DENIED:
+        // A race condition subscriber unsubscribes before AFW denies resource.
     case RSRC_RELEASED:
     {
         nextState = mAcquiredState;
@@ -492,7 +557,7 @@ AgpsState* AgpsReleasingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         // by setting false, we keep subscribers on the linked list
         mStateMachine->notifySubscribers(notification);
 
-        if (mStateMachine->hasSubscribers()) {
+        if (mStateMachine->hasActiveSubscribers()) {
             nextState = mPendingState;
             // request from connecivity service for NIF
             mStateMachine->sendRsrcRequest(GPS_REQUEST_AGPS_DATA_CONN);
@@ -503,7 +568,6 @@ AgpsState* AgpsReleasingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
         break;
 
     case RSRC_GRANTED:
-    case RSRC_DENIED:
     default:
         LOC_LOGE("%s: unrecognized event %d", whoami(), event);
         // no state change.
@@ -513,18 +577,59 @@ AgpsState* AgpsReleasingState::onRsrcEvent(AgpsRsrcStatus event, void* data)
              whoami(), nextState->whoami(), event);
     return nextState;
 }
+//======================================================================
+//Servicer
+//======================================================================
+Servicer* Servicer :: getServicer(servicerType type, void *cb_func)
+{
+    LOC_LOGD(" Enter getServicer type:%d\n", (int)type);
+    switch(type) {
+    case servicerTypeNoCbParam:
+        return (new Servicer(cb_func));
+    case servicerTypeExt:
+        return (new ExtServicer(cb_func));
+    case servicerTypeAgps:
+        return (new AGpsServicer(cb_func));
+    default:
+        return NULL;
+    }
+}
 
+int Servicer :: requestRsrc(void *cb_data)
+{
+    callback();
+    return 0;
+}
+
+int ExtServicer :: requestRsrc(void *cb_data)
+{
+    int ret=-1;
+    LOC_LOGD("Enter ExtServicer :: requestRsrc\n");
+    ret = callbackExt(cb_data);
+    LOC_LOGD("Exit ExtServicer :: requestRsrc\n");
+    return(ret);
+}
+
+int AGpsServicer :: requestRsrc(void *cb_data)
+{
+    callbackAGps((AGpsStatus *)cb_data);
+    return 0;
+}
 
 //======================================================================
 // AgpsStateMachine
 //======================================================================
 
-AgpsStateMachine::AgpsStateMachine(void (*servicer)(AGpsStatus* status),
-                                   AGpsType type) :
-    mServicer(servicer), mType(type),
-    mStatePtr(new AgpsReleasedState(this)),
+AgpsStateMachine::AgpsStateMachine(servicerType servType,
+                                   void *cb_func,
+                                   AGpsExtType type,
+                                   bool enforceSingleSubscriber) :
+    mStatePtr(new AgpsReleasedState(this)),mType(type),
     mAPN(NULL),
-    mAPNLen(0)
+    mAPNLen(0),
+    mBearer(AGPS_APN_BEARER_INVALID),
+    mEnforceSingleSubscriber(enforceSingleSubscriber),
+    mServicer(Servicer :: getServicer(servType, (void *)cb_func))
 {
     linked_list_init(&mSubscribers);
 
@@ -565,6 +670,7 @@ AgpsStateMachine::~AgpsStateMachine()
     delete releasedState;
     delete pendindState;
     delete releasingState;
+    delete mServicer;
     linked_list_destroy(&mSubscribers);
 
     if (NULL != mAPN) {
@@ -619,6 +725,7 @@ void AgpsStateMachine::notifySubscribers(Notification& notification) const
             // rest of the list unprocessed.  So we need a loop.
             linked_list_search(mSubscribers, (void**)&s, notifySubscriber,
                                (void*)&notification, true);
+            delete s;
         }
     } else {
         // no loop needed if it the last param sets to false, which
@@ -640,42 +747,43 @@ void AgpsStateMachine::addSubscriber(Subscriber* subscriber) const
     }
 }
 
-void AgpsStateMachine::sendRsrcRequest(AGpsStatusValue action) const
+int AgpsStateMachine::sendRsrcRequest(AGpsStatusValue action) const
 {
     Subscriber* s = NULL;
-    Notification notification(Notification::BROADCAST_ALL);
+    Notification notification(Notification::BROADCAST_ACTIVE);
     linked_list_search(mSubscribers, (void**)&s, hasSubscriber,
                        (void*)&notification, false);
 
     if ((NULL == s) == (GPS_RELEASE_AGPS_DATA_CONN == action)) {
-        AGpsStatus nifRequest;
+        AGpsExtStatus nifRequest;
         nifRequest.size = sizeof(nifRequest);
         nifRequest.type = mType;
         nifRequest.status = action;
 
-#ifdef QCOM_FEATURE_IPV6
         if (s == NULL) {
             nifRequest.ipv4_addr = INADDR_NONE;
             nifRequest.ipv6_addr[0] = 0;
+            nifRequest.ssid[0] = '\0';
+            nifRequest.password[0] = '\0';
         } else {
             s->setIPAddresses(nifRequest.ipv4_addr, (char*)nifRequest.ipv6_addr);
+            s->setWifiInfo(nifRequest.ssid, nifRequest.password);
         }
-#else
-        if (s == NULL) {
-            nifRequest.ipaddr = INADDR_NONE;
-        } else {
-            nifRequest.ipaddr = s->ID;
-        }
-#endif
 
         CALLBACK_LOG_CALLFLOW("agps_cb", %s, loc_get_agps_status_name(action));
-        (*mServicer)(&nifRequest);
+        mServicer->requestRsrc((void *)&nifRequest);
     }
+    return 0;
 }
 
 void AgpsStateMachine::subscribeRsrc(Subscriber *subscriber)
 {
-    mStatePtr = mStatePtr->onRsrcEvent(RSRC_SUBSCRIBE, (void*)subscriber);
+  if (mEnforceSingleSubscriber && hasSubscribers()) {
+      Notification notification(Notification::BROADCAST_ALL, RSRC_DENIED, true);
+      notifySubscriber(&notification, subscriber);
+  } else {
+      mStatePtr = mStatePtr->onRsrcEvent(RSRC_SUBSCRIBE, (void*)subscriber);
+  }
 }
 
 bool AgpsStateMachine::unsubscribeRsrc(Subscriber *subscriber)
@@ -699,4 +807,164 @@ bool AgpsStateMachine::hasActiveSubscribers() const
     linked_list_search(mSubscribers, (void**)&s,
                        hasSubscriber, (void*)&notification, false);
     return NULL != s;
+}
+
+//======================================================================
+// DSStateMachine
+//======================================================================
+void delay_callback(void *callbackData, int result)
+{
+    if(callbackData) {
+        DSStateMachine *DSSMInstance = (DSStateMachine *)callbackData;
+        DSSMInstance->retryCallback();
+    }
+    else {
+        LOC_LOGE(" NULL argument received. Failing.\n");
+        goto err;
+    }
+err:
+    return;
+}
+
+DSStateMachine :: DSStateMachine(servicerType type, void *cb_func,
+                                 LocEngAdapter* adapterHandle):
+    AgpsStateMachine(type, cb_func, AGPS_TYPE_INVALID,false),
+    mLocAdapter(adapterHandle)
+{
+    LOC_LOGD("%s:%d]: New DSStateMachine\n", __func__, __LINE__);
+    mRetries = 0;
+}
+
+void DSStateMachine :: retryCallback(void)
+{
+    DSSubscriber *subscriber = NULL;
+    Notification notification(Notification::BROADCAST_ACTIVE);
+    linked_list_search(mSubscribers, (void**)&subscriber, hasSubscriber,
+                       (void*)&notification, false);
+    if(subscriber)
+        mLocAdapter->requestSuplES(subscriber->ID);
+    else
+        LOC_LOGE("DSStateMachine :: retryCallback: No subscriber found." \
+                 "Cannot retry data call\n");
+    return;
+}
+
+int DSStateMachine :: sendRsrcRequest(AGpsStatusValue action) const
+{
+    DSSubscriber* s = NULL;
+    dsCbData cbData;
+    int ret=-1;
+    int connHandle=-1;
+    LOC_LOGD("Enter DSStateMachine :: sendRsrcRequest\n");
+    Notification notification(Notification::BROADCAST_ACTIVE);
+    linked_list_search(mSubscribers, (void**)&s, hasSubscriber,
+                       (void*)&notification, false);
+    if(s) {
+        connHandle = s->ID;
+        LOC_LOGD("DSStateMachine :: sendRsrcRequest - subscriber found\n");
+    }
+    else
+        LOC_LOGD("DSStateMachine :: sendRsrcRequest - No subscriber found\n");
+
+    cbData.action = action;
+    cbData.mAdapter = mLocAdapter;
+    ret = mServicer->requestRsrc((void *)&cbData);
+    //Only the request to start data call returns a success/failure
+    //The request to stop data call will always succeed
+    //Hence, the below block will only be executed when the
+    //request to start the data call fails
+    switch(ret) {
+    case LOC_API_ADAPTER_ERR_ENGINE_BUSY:
+        LOC_LOGD("DSStateMachine :: sendRsrcRequest - Failure returned: %d\n",ret);
+        ((DSStateMachine *)this)->incRetries();
+        if(mRetries > MAX_START_DATA_CALL_RETRIES) {
+            LOC_LOGE(" Failed to start Data call. Fallback to normal ATL SUPL\n");
+            informStatus(RSRC_DENIED, connHandle);
+        }
+        else {
+            if(loc_timer_start(DATA_CALL_RETRY_DELAY_MSEC, delay_callback, (void *)this)) {
+                LOC_LOGE("Error: Could not start delay thread\n");
+                ret = -1;
+                goto err;
+            }
+        }
+        break;
+    case LOC_API_ADAPTER_ERR_UNSUPPORTED:
+        LOC_LOGE("No profile found for emergency call. Fallback to normal SUPL ATL\n");
+        informStatus(RSRC_DENIED, connHandle);
+        break;
+    case LOC_API_ADAPTER_ERR_SUCCESS:
+        LOC_LOGD("%s:%d]: Request to start data call sent\n", __func__, __LINE__);
+        break;
+    case -1:
+        //One of the ways this case can be encountered is if the callback function
+        //receives a null argument, it just exits with -1 error
+        LOC_LOGE("Error: Something went wrong somewhere. Falling back to normal SUPL ATL\n");
+        informStatus(RSRC_DENIED, connHandle);
+        break;
+    default:
+        LOC_LOGE("%s:%d]: Unrecognized return value\n", __func__, __LINE__);
+    }
+err:
+    LOC_LOGD("EXIT DSStateMachine :: sendRsrcRequest; ret = %d\n", ret);
+    return ret;
+}
+
+void DSStateMachine :: onRsrcEvent(AgpsRsrcStatus event)
+{
+    void* currState = (void *)mStatePtr;
+    LOC_LOGD("Enter DSStateMachine :: onRsrcEvent. event = %d\n", (int)event);
+    switch (event)
+    {
+    case RSRC_GRANTED:
+        LOC_LOGD("DSStateMachine :: onRsrcEvent RSRC_GRANTED\n");
+        mStatePtr = mStatePtr->onRsrcEvent(event, NULL);
+        break;
+    case RSRC_RELEASED:
+        LOC_LOGD("DSStateMachine :: onRsrcEvent RSRC_RELEASED\n");
+        mStatePtr = mStatePtr->onRsrcEvent(event, NULL);
+        //To handle the case where we get a RSRC_RELEASED in
+        //pending state, we translate that to a RSRC_DENIED state
+        //since the callback from DSI is either RSRC_GRANTED or RSRC_RELEASED
+        //for when the call is connected or disconnected respectively.
+        if((void *)mStatePtr != currState)
+            break;
+        else {
+            event = RSRC_DENIED;
+            LOC_LOGE(" Switching event to RSRC_DENIED\n");
+        }
+    case RSRC_DENIED:
+        mStatePtr = mStatePtr->onRsrcEvent(event, NULL);
+        break;
+    default:
+        LOC_LOGW("AgpsStateMachine: unrecognized event %d", event);
+        break;
+    }
+    LOC_LOGD("Exit DSStateMachine :: onRsrcEvent. event = %d\n", (int)event);
+}
+
+void DSStateMachine :: informStatus(AgpsRsrcStatus status, int ID) const
+{
+    LOC_LOGD("DSStateMachine :: informStatus. Status=%d\n",(int)status);
+    switch(status) {
+    case RSRC_UNSUBSCRIBE:
+        mLocAdapter->atlCloseStatus(ID, 1);
+        break;
+    case RSRC_RELEASED:
+        mLocAdapter->closeDataCall();
+        break;
+    case RSRC_DENIED:
+        ((DSStateMachine *)this)->mRetries = 0;
+        mLocAdapter->requestATL(ID, AGPS_TYPE_SUPL);
+        break;
+    case RSRC_GRANTED:
+        mLocAdapter->atlOpenStatus(ID, 1,
+                                                     NULL,
+                                                     AGPS_APN_BEARER_INVALID,
+                                                     AGPS_TYPE_INVALID);
+        break;
+    default:
+        LOC_LOGW("DSStateMachine :: informStatus - unknown status");
+    }
+    return;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009,2011 Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #include <ctype.h>
 #include <math.h>
 #include <pthread.h>
@@ -43,13 +44,20 @@
 #include <sys/time.h>
 #include <netdb.h>
 #include <time.h>
-#include <dlfcn.h>
 
-#include "LocApiAdapter.h"
+#include <LocEngAdapter.h>
 
 #include <cutils/sched_policy.h>
+#ifndef USE_GLIB
 #include <utils/SystemClock.h>
 #include <utils/Log.h>
+#endif /* USE_GLIB */
+
+#ifdef USE_GLIB
+#include <glib.h>
+#include <sys/syscall.h>
+#endif /* USE_GLIB */
+
 #include <string.h>
 
 #include <loc_eng.h>
@@ -57,90 +65,103 @@
 #include <loc_eng_dmn_conn.h>
 #include <loc_eng_dmn_conn_handler.h>
 #include <loc_eng_msg.h>
-#include <loc_eng_msg_id.h>
+#include <loc_eng_nmea.h>
 #include <msg_q.h>
-
-#include "ulp.h"
-
+#include <loc.h>
 #include "log_util.h"
+#include "platform_lib_includes.h"
+#include "loc_core_log.h"
 #include "loc_eng_log.h"
 
 #define SUCCESS TRUE
 #define FAILURE FALSE
 
+#ifndef GPS_CONF_FILE
+#define GPS_CONF_FILE            "/etc/gps.conf"   //??? platform independent
+#endif
 
-static void loc_eng_deferred_action_thread(void* context);
-static void* loc_eng_create_msg_q();
-static void loc_eng_free_msg(void* msg);
+#ifndef SAP_CONF_FILE
+#define SAP_CONF_FILE            "/etc/sap.conf"
+#endif
 
-struct LocEngContext {
-    // Data variables used by deferred action thread
-    const void* deferred_q;
-    const pthread_t deferred_action_thread;
-    static LocEngContext* get(gps_create_thread threadCreator);
-    void drop();
-    static pthread_mutex_t lock;
-    static pthread_cond_t cond;
-private:
-    int counter;
-    static LocEngContext *me;
-    LocEngContext(gps_create_thread threadCreator);
+using namespace loc_core;
+
+boolean configAlreadyRead = false;
+unsigned int agpsStatus = 0;
+loc_gps_cfg_s_type gps_conf;
+loc_sap_cfg_s_type sap_conf;
+
+/* Parameter spec table */
+static loc_param_s_type loc_parameter_table[] =
+{
+  {"INTERMEDIATE_POS",               &gps_conf.INTERMEDIATE_POS,               NULL, 'n'},
+  {"ACCURACY_THRES",                 &gps_conf.ACCURACY_THRES,                 NULL, 'n'},
+  {"ENABLE_WIPER",                   &gps_conf.ENABLE_WIPER,                   NULL, 'n'},
+  {"NMEA_PROVIDER",                  &gps_conf.NMEA_PROVIDER,                  NULL, 'n'},
+  {"SUPL_VER",                       &gps_conf.SUPL_VER,                       NULL, 'n'},
+  {"CAPABILITIES",                   &gps_conf.CAPABILITIES,                   NULL, 'n'},
+  {"GYRO_BIAS_RANDOM_WALK",          &sap_conf.GYRO_BIAS_RANDOM_WALK,          &sap_conf.GYRO_BIAS_RANDOM_WALK_VALID, 'f'},
+  {"ACCEL_RANDOM_WALK_SPECTRAL_DENSITY",     &sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY,    &sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
+  {"ANGLE_RANDOM_WALK_SPECTRAL_DENSITY",     &sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY,    &sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
+  {"RATE_RANDOM_WALK_SPECTRAL_DENSITY",      &sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY,     &sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
+  {"VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY",  &sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY, &sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
+  {"SENSOR_ACCEL_BATCHES_PER_SEC",   &sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC,   NULL, 'n'},
+  {"SENSOR_ACCEL_SAMPLES_PER_BATCH", &sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH, NULL, 'n'},
+  {"SENSOR_GYRO_BATCHES_PER_SEC",    &sap_conf.SENSOR_GYRO_BATCHES_PER_SEC,    NULL, 'n'},
+  {"SENSOR_GYRO_SAMPLES_PER_BATCH",  &sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH,  NULL, 'n'},
+  {"SENSOR_ACCEL_BATCHES_PER_SEC_HIGH",   &sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC_HIGH,   NULL, 'n'},
+  {"SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH", &sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH, NULL, 'n'},
+  {"SENSOR_GYRO_BATCHES_PER_SEC_HIGH",    &sap_conf.SENSOR_GYRO_BATCHES_PER_SEC_HIGH,    NULL, 'n'},
+  {"SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH",  &sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH,  NULL, 'n'},
+  {"SENSOR_CONTROL_MODE",            &sap_conf.SENSOR_CONTROL_MODE,            NULL, 'n'},
+  {"SENSOR_USAGE",                   &sap_conf.SENSOR_USAGE,                   NULL, 'n'},
+  {"SENSOR_ALGORITHM_CONFIG_MASK",   &sap_conf.SENSOR_ALGORITHM_CONFIG_MASK,   NULL, 'n'},
+  {"QUIPC_ENABLED",                  &gps_conf.QUIPC_ENABLED,                  NULL, 'n'},
+  {"LPP_PROFILE",                    &gps_conf.LPP_PROFILE,                    NULL, 'n'},
+  {"A_GLONASS_POS_PROTOCOL_SELECT",  &gps_conf.A_GLONASS_POS_PROTOCOL_SELECT,  NULL, 'n'},
 };
 
-pthread_mutex_t LocEngContext::lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t LocEngContext::cond = PTHREAD_COND_INITIALIZER;
-LocEngContext* LocEngContext::me = NULL;
-
-LocEngContext::LocEngContext(gps_create_thread threadCreator) :
-    deferred_q((const void*)loc_eng_create_msg_q()),
-    deferred_action_thread(threadCreator("loc_eng",loc_eng_deferred_action_thread, this)),
-    counter(0)
+static void loc_default_parameters(void)
 {
-    LOC_LOGV("LocEngContext %d : %d pthread_id %ld\n",
-             getpid(), gettid(),
-             deferred_action_thread);
-}
+   /* defaults */
+   gps_conf.INTERMEDIATE_POS = 0;
+   gps_conf.ACCURACY_THRES = 0;
+   gps_conf.ENABLE_WIPER = 0;
+   gps_conf.NMEA_PROVIDER = 0;
+   gps_conf.SUPL_VER = 0x10000;
+   gps_conf.CAPABILITIES = 0x7;
 
-LocEngContext* LocEngContext::get(gps_create_thread threadCreator)
-{
-    pthread_mutex_lock(&lock);
-    // gonna need mutex protection here...
-    if (NULL == me) {
-        // gps.conf is not part of the context class. But we only want to parse the conf
-        // file once. This is the only good place to ensure that.
-        // In fact one day the conf file should go into context as well.
-        loc_read_gps_conf();
+   sap_conf.GYRO_BIAS_RANDOM_WALK = 0;
+   sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC = 2;
+   sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH = 5;
+   sap_conf.SENSOR_GYRO_BATCHES_PER_SEC = 2;
+   sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH = 5;
+   sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC_HIGH = 4;
+   sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH = 25;
+   sap_conf.SENSOR_GYRO_BATCHES_PER_SEC_HIGH = 4;
+   sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH = 25;
+   sap_conf.SENSOR_CONTROL_MODE = 0; /* AUTO */
+   sap_conf.SENSOR_USAGE = 0; /* Enabled */
+   sap_conf.SENSOR_ALGORITHM_CONFIG_MASK = 0; /* INS Disabled = FALSE*/
 
-        me = new LocEngContext(threadCreator);
-    }
-    me->counter++;
+   /* Values MUST be set by OEMs in configuration for sensor-assisted
+      navigation to work. There are NO default values */
+   sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY = 0;
+   sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY = 0;
+   sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY = 0;
+   sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY = 0;
 
-    pthread_mutex_unlock(&lock);
-    return me;
-}
+   sap_conf.GYRO_BIAS_RANDOM_WALK_VALID = 0;
+   sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
+   sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
+   sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
+   sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
 
-void LocEngContext::drop()
-{
-    if (deferred_action_thread != pthread_self()) {
-        pthread_mutex_lock(&lock);
-        counter--;
-        if (counter == 0) {
-            loc_eng_msg *msg(new loc_eng_msg(this, LOC_ENG_MSG_QUIT));
-            msg_q_snd((void*)deferred_q, msg, loc_eng_free_msg);
+      /* LTE Positioning Profile configuration is disable by default*/
+   gps_conf.LPP_PROFILE = 0;
 
-            // I am not sure if this is going to be hazardous. The calling thread
-            // might be blocked for a while, if the q is loaded.  I am wondering
-            // if we should just dump all the msgs in the q upon QUIT.
-            pthread_cond_wait(&cond, &lock);
-
-            msg_q_destroy((void**)&deferred_q);
-            delete me;
-            me = NULL;
-        }
-        pthread_mutex_unlock(&lock);
-    } else {
-        LOC_LOGE("The HAL thread cannot free itself");
-    }
+   /*By default no positioning protocol is selected on A-GLONASS system*/
+   gps_conf.A_GLONASS_POS_PROTOCOL_SELECT = 0;
 }
 
 // 2nd half of init(), singled out for
@@ -161,13 +182,1195 @@ static void loc_eng_agps_close_status(loc_eng_data_s_type &loc_eng_data, int is_
 static void loc_eng_handle_engine_down(loc_eng_data_s_type &loc_eng_data) ;
 static void loc_eng_handle_engine_up(loc_eng_data_s_type &loc_eng_data) ;
 
-static char extra_data[100];
+static int loc_eng_start_handler(loc_eng_data_s_type &loc_eng_data);
+static int loc_eng_stop_handler(loc_eng_data_s_type &loc_eng_data);
 
-#ifdef QCOM_FEATURE_ULP
-// ULP integration
-static const ulpInterface* locEngUlpInf = NULL;
-static int loc_eng_ulp_init(void* handle) ;
-#endif
+static void deleteAidingData(loc_eng_data_s_type &logEng);
+static AgpsStateMachine*
+getAgpsStateMachine(loc_eng_data_s_type& logEng, AGpsExtType agpsType);
+
+static void update_aiding_data_for_deletion(loc_eng_data_s_type& loc_eng_data) {
+    if (loc_eng_data.engine_status != GPS_STATUS_ENGINE_ON &&
+        loc_eng_data.aiding_data_for_deletion != 0)
+    {
+        loc_eng_data.adapter->deleteAidingData(loc_eng_data.aiding_data_for_deletion);
+        loc_eng_data.aiding_data_for_deletion = 0;
+    }
+}
+
+static void* noProc(void* data)
+{
+    return NULL;
+}
+
+
+/*********************************************************************
+ * definitions of the static messages used in the file
+ *********************************************************************/
+//        case LOC_ENG_MSG_REQUEST_NI:
+LocEngRequestNi::LocEngRequestNi(void* locEng,
+                                 GpsNiNotification &notif,
+                                 const void* data) :
+    LocMsg(), mLocEng(locEng), mNotify(notif), mPayload(data) {
+    locallog();
+}
+void LocEngRequestNi::proc() const {
+    loc_eng_ni_request_handler(*((loc_eng_data_s_type*)mLocEng),
+                               &mNotify, mPayload);
+}
+void LocEngRequestNi::locallog() const
+{
+    LOC_LOGV("id: %d\n  type: %s\n  flags: %d\n  time out: %d\n  "
+             "default response: %s\n  requestor id encoding: %s\n"
+             "  text encoding: %s\n  passThroughData: %p",
+             mNotify.notification_id,
+             loc_get_ni_type_name(mNotify.ni_type),
+             mNotify.notify_flags,
+             mNotify.timeout,
+             loc_get_ni_response_name(mNotify.default_response),
+             loc_get_ni_encoding_name(mNotify.requestor_id_encoding),
+             loc_get_ni_encoding_name(mNotify.text_encoding),
+             mPayload);
+}
+inline void LocEngRequestNi::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_INFORM_NI_RESPONSE:
+// in loc_eng_ni.cpp
+
+//        case LOC_ENG_MSG_START_FIX:
+LocEngStartFix::LocEngStartFix(LocEngAdapter* adapter) :
+    LocMsg(), mAdapter(adapter)
+{
+    locallog();
+}
+inline void LocEngStartFix::proc() const
+{
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mAdapter->getOwner();
+    loc_eng_start_handler(*locEng);
+}
+inline void LocEngStartFix::locallog() const
+{
+    LOC_LOGV("LocEngStartFix");
+}
+inline void LocEngStartFix::log() const
+{
+    locallog();
+}
+void LocEngStartFix::send() const {
+    mAdapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_STOP_FIX:
+LocEngStopFix::LocEngStopFix(LocEngAdapter* adapter) :
+    LocMsg(), mAdapter(adapter)
+{
+    locallog();
+}
+inline void LocEngStopFix::proc() const
+{
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mAdapter->getOwner();
+    loc_eng_stop_handler(*locEng);
+}
+inline void LocEngStopFix::locallog() const
+{
+    LOC_LOGV("LocEngStopFix");
+}
+inline void LocEngStopFix::log() const
+{
+    locallog();
+}
+void LocEngStopFix::send() const {
+    mAdapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_SET_POSITION_MODE:
+LocEngPositionMode::LocEngPositionMode(LocEngAdapter* adapter,
+                                       LocPosMode &mode) :
+    LocMsg(), mAdapter(adapter), mPosMode(mode)
+{
+    mPosMode.logv();
+}
+inline void LocEngPositionMode::proc() const {
+    mAdapter->setPositionMode(&mPosMode);
+}
+inline void LocEngPositionMode::log() const {
+    mPosMode.logv();
+}
+void LocEngPositionMode::send() const {
+    mAdapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_SET_TIME:
+struct LocEngSetTime : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const GpsUtcTime mTime;
+    const int64_t mTimeReference;
+    const int mUncertainty;
+    inline LocEngSetTime(LocEngAdapter* adapter,
+                         GpsUtcTime t, int64_t tf, int unc) :
+        LocMsg(), mAdapter(adapter),
+        mTime(t), mTimeReference(tf), mUncertainty(unc)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setTime(mTime, mTimeReference, mUncertainty);
+    }
+    inline void locallog() const {
+        LOC_LOGV("time: %lld\n  timeReference: %lld\n  uncertainty: %d",
+                 mTime, mTimeReference, mUncertainty);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+ //       case LOC_ENG_MSG_INJECT_LOCATION:
+struct LocEngInjectLocation : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const double mLatitude;
+    const double mLongitude;
+    const float mAccuracy;
+    inline LocEngInjectLocation(LocEngAdapter* adapter,
+                                double lat, double lon, float accur) :
+        LocMsg(), mAdapter(adapter),
+        mLatitude(lat), mLongitude(lon), mAccuracy(accur)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->injectPosition(mLatitude, mLongitude, mAccuracy);
+    }
+    inline void locallog() const {
+        LOC_LOGV("latitude: %f\n  longitude: %f\n  accuracy: %f",
+                 mLatitude, mLongitude, mAccuracy);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SET_SERVER_IPV4:
+struct LocEngSetServerIpv4 : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const unsigned int mNlAddr;
+    const int mPort;
+    const LocServerType mServerType;
+    inline LocEngSetServerIpv4(LocEngAdapter* adapter,
+                               unsigned int ip,
+                               int port,
+                               LocServerType type) :
+        LocMsg(), mAdapter(adapter),
+        mNlAddr(ip), mPort(port), mServerType(type)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setServer(mNlAddr, mPort, mServerType);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngSetServerIpv4 - addr: %x, port: %d, type: %s",
+                 mNlAddr, mPort, loc_get_server_type_name(mServerType));
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SET_SERVER_URL:
+struct LocEngSetServerUrl : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mLen;
+    char* mUrl;
+    inline LocEngSetServerUrl(LocEngAdapter* adapter,
+                              char* urlString,
+                              int url_len) :
+        LocMsg(), mAdapter(adapter),
+        mLen(url_len), mUrl(new char[mLen+1])
+    {
+        memcpy((void*)mUrl, (void*)urlString, url_len);
+        mUrl[mLen] = 0;
+        locallog();
+    }
+    inline ~LocEngSetServerUrl()
+    {
+        delete[] mUrl;
+    }
+    inline virtual void proc() const {
+        mAdapter->setServer(mUrl, mLen);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngSetServerUrl - url: %s", mUrl);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_A_GLONASS_PROTOCOL:
+struct LocEngAGlonassProtocol : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const unsigned long mAGlonassProtocl;
+    inline LocEngAGlonassProtocol(LocEngAdapter* adapter,
+                                  unsigned long protocol) :
+        LocMsg(), mAdapter(adapter), mAGlonassProtocl(protocol)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setAGLONASSProtocol(mAGlonassProtocl);
+    }
+    inline  void locallog() const {
+        LOC_LOGV("A-GLONASS protocol: 0x%lx", mAGlonassProtocl);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SUPL_VERSION:
+struct LocEngSuplVer : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mSuplVer;
+    inline LocEngSuplVer(LocEngAdapter* adapter,
+                         int suplVer) :
+        LocMsg(), mAdapter(adapter), mSuplVer(suplVer)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setSUPLVersion(mSuplVer);
+    }
+    inline  void locallog() const {
+        LOC_LOGV("SUPL Version: %d", mSuplVer);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_LPP_CONFIG:
+struct LocEngLppConfig : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mLppConfig;
+    inline LocEngLppConfig(LocEngAdapter* adapter,
+                           int lppConfig) :
+        LocMsg(), mAdapter(adapter), mLppConfig(lppConfig)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setLPPConfig(mLppConfig);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngLppConfig - profile: %d", mLppConfig);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SET_SENSOR_CONTROL_CONFIG:
+struct LocEngSensorControlConfig : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mSensorsDisabled;
+    inline LocEngSensorControlConfig(LocEngAdapter* adapter,
+                                     int sensorsDisabled) :
+        LocMsg(), mAdapter(adapter), mSensorsDisabled(sensorsDisabled)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setSensorControlConfig(mSensorsDisabled);
+    }
+    inline  void locallog() const {
+        LOC_LOGV("LocEngSensorControlConfig - Sensors Disabled: %d",
+                 mSensorsDisabled);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SET_SENSOR_PROPERTIES:
+struct LocEngSensorProperties : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const bool mGyroBiasVarianceRandomWalkValid;
+    const float mGyroBiasVarianceRandomWalk;
+    const bool mAccelRandomWalkValid;
+    const float mAccelRandomWalk;
+    const bool mAngleRandomWalkValid;
+    const float mAngleRandomWalk;
+    const bool mRateRandomWalkValid;
+    const float mRateRandomWalk;
+    const bool mVelocityRandomWalkValid;
+    const float mVelocityRandomWalk;
+    inline LocEngSensorProperties(LocEngAdapter* adapter,
+                                  bool gyroBiasRandomWalk_valid,
+                                  float gyroBiasRandomWalk,
+                                  bool accelRandomWalk_valid,
+                                  float accelRandomWalk,
+                                  bool angleRandomWalk_valid,
+                                  float angleRandomWalk,
+                                  bool rateRandomWalk_valid,
+                                  float rateRandomWalk,
+                                  bool velocityRandomWalk_valid,
+                                  float velocityRandomWalk) :
+        LocMsg(), mAdapter(adapter),
+        mGyroBiasVarianceRandomWalkValid(gyroBiasRandomWalk_valid),
+        mGyroBiasVarianceRandomWalk(gyroBiasRandomWalk),
+        mAccelRandomWalkValid(accelRandomWalk_valid),
+        mAccelRandomWalk(accelRandomWalk),
+        mAngleRandomWalkValid(angleRandomWalk_valid),
+        mAngleRandomWalk(angleRandomWalk),
+        mRateRandomWalkValid(rateRandomWalk_valid),
+        mRateRandomWalk(rateRandomWalk),
+        mVelocityRandomWalkValid(velocityRandomWalk_valid),
+        mVelocityRandomWalk(velocityRandomWalk)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setSensorProperties(mGyroBiasVarianceRandomWalkValid,
+                                      mGyroBiasVarianceRandomWalk,
+                                      mAccelRandomWalkValid,
+                                      mAccelRandomWalk,
+                                      mAngleRandomWalkValid,
+                                      mAngleRandomWalk,
+                                      mRateRandomWalkValid,
+                                      mRateRandomWalk,
+                                      mVelocityRandomWalkValid,
+                                      mVelocityRandomWalk);
+    }
+    inline  void locallog() const {
+        LOC_LOGV("Sensor properties validity, Gyro Random walk: %d "
+                 "Accel Random Walk: %d "
+                 "Angle Random Walk: %d Rate Random Walk: %d "
+                 "Velocity Random Walk: %d\n"
+                 "Sensor properties, Gyro Random walk: %f "
+                 "Accel Random Walk: %f "
+                 "Angle Random Walk: %f Rate Random Walk: %f "
+                 "Velocity Random Walk: %f",
+                 mGyroBiasVarianceRandomWalkValid,
+                 mAccelRandomWalkValid,
+                 mAngleRandomWalkValid,
+                 mRateRandomWalkValid,
+                 mVelocityRandomWalkValid,
+                 mGyroBiasVarianceRandomWalk,
+                 mAccelRandomWalk,
+                 mAngleRandomWalk,
+                 mRateRandomWalk,
+                 mVelocityRandomWalk
+            );
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_SET_SENSOR_PERF_CONTROL_CONFIG:
+struct LocEngSensorPerfControlConfig : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mControlMode;
+    const int mAccelSamplesPerBatch;
+    const int mAccelBatchesPerSec;
+    const int mGyroSamplesPerBatch;
+    const int mGyroBatchesPerSec;
+    const int mAccelSamplesPerBatchHigh;
+    const int mAccelBatchesPerSecHigh;
+    const int mGyroSamplesPerBatchHigh;
+    const int mGyroBatchesPerSecHigh;
+    const int mAlgorithmConfig;
+    inline LocEngSensorPerfControlConfig(LocEngAdapter* adapter,
+                                         int controlMode,
+                                         int accelSamplesPerBatch,
+                                         int accelBatchesPerSec,
+                                         int gyroSamplesPerBatch,
+                                         int gyroBatchesPerSec,
+                                         int accelSamplesPerBatchHigh,
+                                         int accelBatchesPerSecHigh,
+                                         int gyroSamplesPerBatchHigh,
+                                         int gyroBatchesPerSecHigh,
+                                         int algorithmConfig) :
+        LocMsg(), mAdapter(adapter),
+        mControlMode(controlMode),
+        mAccelSamplesPerBatch(accelSamplesPerBatch),
+        mAccelBatchesPerSec(accelBatchesPerSec),
+        mGyroSamplesPerBatch(gyroSamplesPerBatch),
+        mGyroBatchesPerSec(gyroBatchesPerSec),
+        mAccelSamplesPerBatchHigh(accelSamplesPerBatchHigh),
+        mAccelBatchesPerSecHigh(accelBatchesPerSecHigh),
+        mGyroSamplesPerBatchHigh(gyroSamplesPerBatchHigh),
+        mGyroBatchesPerSecHigh(gyroBatchesPerSecHigh),
+        mAlgorithmConfig(algorithmConfig)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setSensorPerfControlConfig(mControlMode,
+                                             mAccelSamplesPerBatch,
+                                             mAccelBatchesPerSec,
+                                             mGyroSamplesPerBatch,
+                                             mGyroBatchesPerSec,
+                                             mAccelSamplesPerBatchHigh,
+                                             mAccelBatchesPerSecHigh,
+                                             mGyroSamplesPerBatchHigh,
+                                             mGyroBatchesPerSecHigh,
+                                             mAlgorithmConfig);
+    }
+    inline void locallog() const {
+        LOC_LOGV("Sensor Perf Control Config (performanceControlMode)(%u) "
+                 "accel(#smp,#batches) (%u,%u) "
+                 "gyro(#smp,#batches) (%u,%u), "
+                 "accel_high(#smp,#batches) (%u,%u) "
+                 "gyro_high(#smp,#batches) (%u,%u), "
+                 "algorithmConfig(%u)\n",
+                 mControlMode,
+                 mAccelSamplesPerBatch, mAccelBatchesPerSec,
+                 mGyroSamplesPerBatch, mGyroBatchesPerSec,
+                 mAccelSamplesPerBatchHigh, mAccelBatchesPerSecHigh,
+                 mGyroSamplesPerBatchHigh, mGyroBatchesPerSecHigh,
+                 mAlgorithmConfig);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_EXT_POWER_CONFIG:
+struct LocEngExtPowerConfig : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mIsBatteryCharging;
+    inline LocEngExtPowerConfig(LocEngAdapter* adapter,
+                                int isBatteryCharging) :
+        LocMsg(), mAdapter(adapter),
+        mIsBatteryCharging(isBatteryCharging)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mAdapter->setExtPowerConfig(mIsBatteryCharging);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngExtPowerConfig - isBatteryCharging: %d",
+                 mIsBatteryCharging);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_REPORT_POSITION:
+LocEngReportPosition::LocEngReportPosition(LocAdapterBase* adapter,
+                                           UlpLocation &loc,
+                                           GpsLocationExtended &locExtended,
+                                           void* locExt,
+                                           enum loc_sess_status st,
+                                           LocPosTechMask technology) :
+    LocMsg(), mAdapter(adapter), mLocation(loc),
+    mLocationExtended(locExtended),
+    mLocationExt(((loc_eng_data_s_type*)
+                  ((LocEngAdapter*)
+                   (mAdapter))->getOwner())->location_ext_parser(locExt)),
+    mStatus(st), mTechMask(technology)
+{
+    locallog();
+}
+void LocEngReportPosition::proc() const {
+    LocEngAdapter* adapter = (LocEngAdapter*)mAdapter;
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)adapter->getOwner();
+
+    if (locEng->mute_session_state != LOC_MUTE_SESS_IN_SESSION) {
+        bool reported = false;
+        if (locEng->location_cb != NULL) {
+            if (LOC_SESS_FAILURE == mStatus) {
+                // in case we want to handle the failure case
+                locEng->location_cb(NULL, NULL);
+                reported = true;
+            }
+            // what's in the else if is... (line by line)
+            // 1. this is a final fix; and
+            //   1.1 it is a Satellite fix; or
+            //   1.2 it is a sensor fix
+            // 2. (must be intermediate fix... implicit)
+            //   2.1 we accepte intermediate; and
+            //   2.2 it is NOT the case that
+            //   2.2.1 there is inaccuracy; and
+            //   2.2.2 we care about inaccuracy; and
+            //   2.2.3 the inaccuracy exceeds our tolerance
+            else if ((LOC_SESS_SUCCESS == mStatus &&
+                      ((LOC_POS_TECH_MASK_SATELLITE |
+                        LOC_POS_TECH_MASK_SENSORS) &
+                       mTechMask)) ||
+                     (LOC_SESS_INTERMEDIATE == locEng->intermediateFix &&
+                      !((mLocation.gpsLocation.flags &
+                         GPS_LOCATION_HAS_ACCURACY) &&
+                        (gps_conf.ACCURACY_THRES != 0) &&
+                        (mLocation.gpsLocation.accuracy >
+                         gps_conf.ACCURACY_THRES)))) {
+                locEng->location_cb((UlpLocation*)&(mLocation),
+                                    (void*)mLocationExt);
+                reported = true;
+            }
+        }
+
+        // if we have reported this fix
+        if (reported &&
+            // and if this is a singleshot
+            GPS_POSITION_RECURRENCE_SINGLE ==
+            locEng->adapter->getPositionMode().recurrence) {
+            if (LOC_SESS_INTERMEDIATE == mStatus) {
+                // modem could be still working for a final fix,
+                // although we no longer need it.  So stopFix().
+                locEng->adapter->stopFix();
+            }
+            // turn off the session flag.
+            locEng->adapter->setInSession(false);
+        }
+
+        if (locEng->generateNmea &&
+            mLocation.position_source == ULP_LOCATION_IS_FROM_GNSS)
+        {
+            unsigned char generate_nmea = reported &&
+                                          (mStatus != LOC_SESS_FAILURE);
+            loc_eng_nmea_generate_pos(locEng, mLocation, mLocationExtended,
+                                      generate_nmea);
+        }
+
+        // Free the allocated memory for rawData
+        UlpLocation* gp = (UlpLocation*)&(mLocation);
+        if (gp != NULL && gp->rawData != NULL)
+        {
+            delete (char*)gp->rawData;
+            gp->rawData = NULL;
+            gp->rawDataSize = 0;
+        }
+    }
+}
+void LocEngReportPosition::locallog() const {
+    LOC_LOGV("flags: %d\n  source: %d\n  latitude: %f\n  longitude: %f\n  "
+             "altitude: %f\n  speed: %f\n  bearing: %f\n  accuracy: %f\n  "
+             "timestamp: %lld\n  rawDataSize: %d\n  rawData: %p\n  Session"
+             " status: %d\n Technology mask: %u",
+             mLocation.gpsLocation.flags, mLocation.position_source,
+             mLocation.gpsLocation.latitude, mLocation.gpsLocation.longitude,
+             mLocation.gpsLocation.altitude, mLocation.gpsLocation.speed,
+             mLocation.gpsLocation.bearing, mLocation.gpsLocation.accuracy,
+             mLocation.gpsLocation.timestamp, mLocation.rawDataSize,
+             mLocation.rawData, mStatus, mTechMask);
+}
+void LocEngReportPosition::log() const {
+    locallog();
+}
+void LocEngReportPosition::send() const {
+    mAdapter->sendMsg(this);
+}
+
+
+//        case LOC_ENG_MSG_REPORT_SV:
+LocEngReportSv::LocEngReportSv(LocAdapterBase* adapter,
+                               GpsSvStatus &sv,
+                               GpsLocationExtended &locExtended,
+                               void* svExt) :
+    LocMsg(), mAdapter(adapter), mSvStatus(sv),
+    mLocationExtended(locExtended),
+    mSvExt(((loc_eng_data_s_type*)
+            ((LocEngAdapter*)
+             (mAdapter))->getOwner())->sv_ext_parser(svExt))
+{
+    locallog();
+}
+void LocEngReportSv::proc() const {
+    LocEngAdapter* adapter = (LocEngAdapter*)mAdapter;
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)adapter->getOwner();
+
+    if (locEng->mute_session_state != LOC_MUTE_SESS_IN_SESSION)
+    {
+        if (locEng->sv_status_cb != NULL) {
+            locEng->sv_status_cb((GpsSvStatus*)&(mSvStatus),
+                                 (void*)mSvExt);
+        }
+
+        if (locEng->generateNmea)
+        {
+            loc_eng_nmea_generate_sv(locEng, mSvStatus, mLocationExtended);
+        }
+    }
+}
+void LocEngReportSv::locallog() const {
+    LOC_LOGV("num sv: %d\n  ephemeris mask: %dxn  almanac mask: %x\n  "
+             "used in fix mask: %x\n      sv: prn         snr       "
+             "elevation      azimuth",
+             mSvStatus.num_svs, mSvStatus.ephemeris_mask,
+             mSvStatus.almanac_mask, mSvStatus.used_in_fix_mask);
+    for (int i = 0; i < mSvStatus.num_svs && i < GPS_MAX_SVS; i++) {
+        LOC_LOGV("   %d:   %d    %f    %f    %f\n  ",
+                 i,
+                 mSvStatus.sv_list[i].prn,
+                 mSvStatus.sv_list[i].snr,
+                 mSvStatus.sv_list[i].elevation,
+                 mSvStatus.sv_list[i].azimuth);
+    }
+}
+inline void LocEngReportSv::log() const {
+    locallog();
+}
+void LocEngReportSv::send() const {
+    mAdapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_REPORT_STATUS:
+LocEngReportStatus::LocEngReportStatus(void* locEng,
+                                       GpsStatusValue engineStatus) :
+    LocMsg(),  mLocEng(locEng), mStatus(engineStatus)
+{
+    locallog();
+}
+inline void LocEngReportStatus::proc() const
+{
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*) mLocEng;
+
+    loc_eng_report_status(*locEng, mStatus);
+    update_aiding_data_for_deletion(*locEng);
+}
+inline void LocEngReportStatus::locallog() const {
+    LOC_LOGV("LocEngReportStatus");
+}
+inline void LocEngReportStatus::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REPORT_NMEA:
+LocEngReportNmea::LocEngReportNmea(void* locEng,
+                                   const char* data, int len) :
+    LocMsg(), mLocEng(locEng), mNmea(new char[len]), mLen(len)
+{
+    memcpy((void*)mNmea, (void*)data, len);
+    locallog();
+}
+void LocEngReportNmea::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*) mLocEng;
+
+    struct timeval tv;
+    gettimeofday(&tv, (struct timezone *) NULL);
+    int64_t now = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
+    CALLBACK_LOG_CALLFLOW("nmea_cb", %d, mLen);
+    locEng->nmea_cb(now, mNmea, mLen);
+}
+inline void LocEngReportNmea::locallog() const {
+    LOC_LOGV("LocEngReportNmea");
+}
+inline void LocEngReportNmea::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REPORT_XTRA_SERVER:
+LocEngReportXtraServer::LocEngReportXtraServer(void* locEng,
+                                               const char *url1,
+                                               const char *url2,
+                                               const char *url3,
+                                               const int maxlength) :
+    LocMsg(), mLocEng(locEng), mMaxLen(maxlength),
+    mServers(new char[3*(mMaxLen+1)])
+{
+    strlcpy(mServers, url1, mMaxLen);
+    strlcpy(&(mServers[mMaxLen+1]), url2, mMaxLen);
+    strlcpy(&(mServers[(mMaxLen+1)<<1]), url3, mMaxLen);
+    locallog();
+}
+void LocEngReportXtraServer::proc() const {
+    loc_eng_xtra_data_s_type* locEngXtra =
+        &(((loc_eng_data_s_type*)mLocEng)->xtra_module_data);
+
+    if (locEngXtra->report_xtra_server_cb != NULL) {
+        CALLBACK_LOG_CALLFLOW("report_xtra_server_cb", %s, mServers);
+        locEngXtra->report_xtra_server_cb(mServers,
+                                          &(mServers[mMaxLen+1]),
+                                          &(mServers[(mMaxLen+1)<<1]));
+    } else {
+        LOC_LOGE("Callback function for request xtra is NULL");
+    }
+}
+inline void LocEngReportXtraServer::locallog() const {
+    LOC_LOGV("LocEngReportXtraServers: server1: %s\n  server2: %s\n"
+             "  server3: %s\n",
+             mServers, &mServers[mMaxLen], &mServers[mMaxLen<<1]);
+}
+inline void LocEngReportXtraServer::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REQUEST_BIT:
+//        case LOC_ENG_MSG_RELEASE_BIT:
+LocEngReqRelBIT::LocEngReqRelBIT(void* locEng, AGpsExtType type,
+                                 int ipv4, char* ipv6, bool isReq) :
+    LocMsg(), mLocEng(locEng), mType(type), mIPv4Addr(ipv4),
+    mIPv6Addr(ipv6 ? new char[16] : NULL), mIsReq(isReq) {
+    if (NULL != ipv6)
+        memcpy(mIPv6Addr, ipv6, 16);
+    locallog();
+}
+inline LocEngReqRelBIT::~LocEngReqRelBIT() {
+    if (mIPv6Addr) {
+        delete[] mIPv6Addr;
+    }
+}
+void LocEngReqRelBIT::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    BITSubscriber s(getAgpsStateMachine(*locEng, mType),
+                    mIPv4Addr, mIPv6Addr);
+    AgpsStateMachine* sm = (AgpsStateMachine*)s.mStateMachine;
+
+    if (mIsReq) {
+        sm->subscribeRsrc((Subscriber*)&s);
+    } else {
+        sm->unsubscribeRsrc((Subscriber*)&s);
+    }
+}
+inline void LocEngReqRelBIT::locallog() const {
+    LOC_LOGV("LocEngRequestBIT - ipv4: %d.%d.%d.%d, ipv6: %s",
+             (unsigned char)(mIPv4Addr>>24),
+             (unsigned char)(mIPv4Addr>>16),
+             (unsigned char)(mIPv4Addr>>8),
+             (unsigned char)mIPv4Addr,
+             NULL != mIPv6Addr ? mIPv6Addr : "");
+}
+inline void LocEngReqRelBIT::log() const {
+    locallog();
+}
+void LocEngReqRelBIT::send() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    locEng->adapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_RELEASE_BIT:
+struct LocEngReleaseBIT : public LocMsg {
+    const BITSubscriber mSubscriber;
+    inline LocEngReleaseBIT(const AgpsStateMachine* stateMachine,
+                            unsigned int ipv4, char* ipv6) :
+        LocMsg(),
+        mSubscriber(stateMachine, ipv4, ipv6)
+    {
+        locallog();
+    }
+    inline virtual void proc() const
+    {
+        AgpsStateMachine* sm = (AgpsStateMachine*)mSubscriber.mStateMachine;
+        sm->unsubscribeRsrc((Subscriber*)&mSubscriber);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngReleaseBIT - ipv4: %d.%d.%d.%d, ipv6: %s",
+                 (unsigned char)(mSubscriber.ID>>24),
+                 (unsigned char)(mSubscriber.ID>>16),
+                 (unsigned char)(mSubscriber.ID>>8),
+                 (unsigned char)mSubscriber.ID,
+                 NULL != mSubscriber.mIPv6Addr ? mSubscriber.mIPv6Addr : "");
+    }
+    virtual void log() const {
+        locallog();
+    }
+};
+
+//        LocEngSuplEsOpened
+LocEngSuplEsOpened::LocEngSuplEsOpened(void* locEng) :
+    LocMsg(), mLocEng(locEng) {
+    locallog();
+}
+void LocEngSuplEsOpened::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    AgpsStateMachine* sm = locEng->ds_nif;
+    sm->onRsrcEvent(RSRC_GRANTED);
+}
+void LocEngSuplEsOpened::locallog() const {
+    LOC_LOGV("LocEngSuplEsOpened");
+}
+void LocEngSuplEsOpened::log() const {
+    locallog();
+}
+
+//        LocEngSuplEsClosed
+LocEngSuplEsClosed::LocEngSuplEsClosed(void* locEng) :
+    LocMsg(), mLocEng(locEng) {
+    locallog();
+}
+void LocEngSuplEsClosed::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    AgpsStateMachine* sm = locEng->ds_nif;
+    sm->onRsrcEvent(RSRC_RELEASED);
+}
+void LocEngSuplEsClosed::locallog() const {
+    LOC_LOGV("LocEngSuplEsClosed");
+}
+void LocEngSuplEsClosed::log() const {
+    locallog();
+}
+
+
+//        case LOC_ENG_MSG_REQUEST_SUPL_ES:
+LocEngRequestSuplEs::LocEngRequestSuplEs(void* locEng, int id) :
+    LocMsg(), mLocEng(locEng), mID(id) {
+    locallog();
+}
+void LocEngRequestSuplEs::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    AgpsStateMachine* sm = locEng->ds_nif;
+    DSSubscriber s(sm, mID);
+    sm->subscribeRsrc((Subscriber*)&s);
+}
+inline void LocEngRequestSuplEs::locallog() const {
+    LOC_LOGV("LocEngRequestSuplEs");
+}
+inline void LocEngRequestSuplEs::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REQUEST_ATL:
+LocEngRequestATL::LocEngRequestATL(void* locEng, int id,
+                                   AGpsExtType agps_type) :
+    LocMsg(), mLocEng(locEng), mID(id), mType(agps_type) {
+    locallog();
+}
+void LocEngRequestATL::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    AgpsStateMachine* sm = (AgpsStateMachine*)
+                           getAgpsStateMachine(*locEng, mType);
+    ATLSubscriber s(mID,
+                    sm,
+                    locEng->adapter,
+                    AGPS_TYPE_INVALID == mType);
+    sm->subscribeRsrc((Subscriber*)&s);
+}
+inline void LocEngRequestATL::locallog() const {
+    LOC_LOGV("LocEngRequestATL");
+}
+inline void LocEngRequestATL::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_RELEASE_ATL:
+LocEngReleaseATL::LocEngReleaseATL(void* locEng, int id) :
+    LocMsg(), mLocEng(locEng), mID(id) {
+    locallog();
+}
+void LocEngReleaseATL::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    ATLSubscriber s1(mID, locEng->agnss_nif, locEng->adapter, false);
+    if (locEng->agnss_nif->unsubscribeRsrc((Subscriber*)&s1)) {
+        LOC_LOGD("%s:%d]: Unsubscribed from agnss_nif",
+                 __func__, __LINE__);
+    } else {
+        ATLSubscriber s2(mID, locEng->internet_nif, locEng->adapter, false);
+        if (locEng->internet_nif->unsubscribeRsrc((Subscriber*)&s2)) {
+            LOC_LOGD("%s:%d]: Unsubscribed from internet_nif",
+                     __func__, __LINE__);
+        } else {
+            DSSubscriber s3(locEng->ds_nif, mID);
+            if(locEng->ds_nif->unsubscribeRsrc((Subscriber*)&s3)) {
+                LOC_LOGD("%s:%d]: Unsubscribed from ds_nif",
+                         __func__, __LINE__);
+            } else {
+                LOC_LOGW("%s:%d]: Could not release ATL. "
+                         "No subscribers found\n",
+                         __func__, __LINE__);
+                locEng->adapter->atlCloseStatus(mID, 0);
+            }
+        }
+    }
+}
+inline void LocEngReleaseATL::locallog() const {
+    LOC_LOGV("LocEngReleaseATL");
+}
+inline void LocEngReleaseATL::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REQUEST_WIFI:
+//        case LOC_ENG_MSG_RELEASE_WIFI:
+LocEngReqRelWifi::LocEngReqRelWifi(void* locEng, AGpsExtType type,
+                                   loc_if_req_sender_id_e_type sender_id,
+                                   char* s, char* p, bool isReq) :
+    LocMsg(), mLocEng(locEng), mType(type), mSenderId(sender_id),
+    mSSID(NULL == s ? NULL : new char[SSID_BUF_SIZE]),
+    mPassword(NULL == p ? NULL : new char[SSID_BUF_SIZE]),
+    mIsReq(isReq) {
+    if (NULL != s)
+        strlcpy(mSSID, s, SSID_BUF_SIZE);
+    if (NULL != p)
+        strlcpy(mPassword, p, SSID_BUF_SIZE);
+    locallog();
+}
+LocEngReqRelWifi::~LocEngReqRelWifi() {
+    if (NULL != mSSID) {
+        delete[] mSSID;
+    }
+    if (NULL != mPassword) {
+        delete[] mPassword;
+    }
+}
+void LocEngReqRelWifi::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    WIFISubscriber s(locEng->wifi_nif, mSSID, mPassword, mSenderId);
+    if (mIsReq) {
+        locEng->wifi_nif->subscribeRsrc((Subscriber*)&s);
+    } else {
+        locEng->wifi_nif->unsubscribeRsrc((Subscriber*)&s);
+    }
+}
+inline void LocEngReqRelWifi::locallog() const {
+    LOC_LOGV("%s - senderId: %d, ssid: %s, password: %s",
+             mIsReq ? "LocEngRequestWifi" : "LocEngReleaseWifi",
+             mSenderId,
+             NULL != mSSID ? mSSID : "",
+             NULL != mPassword ? mPassword : "");
+}
+inline void LocEngReqRelWifi::log() const {
+    locallog();
+}
+void LocEngReqRelWifi::send() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    locEng->adapter->sendMsg(this);
+}
+
+//        case LOC_ENG_MSG_REQUEST_XTRA_DATA:
+LocEngRequestXtra::LocEngRequestXtra(void* locEng) :
+    mLocEng(locEng) {
+    locallog();
+}
+void LocEngRequestXtra::proc() const
+{
+    loc_eng_xtra_data_s_type* locEngXtra =
+        &(((loc_eng_data_s_type*)mLocEng)->xtra_module_data);
+
+    if (locEngXtra->download_request_cb != NULL) {
+        CALLBACK_LOG_CALLFLOW("download_request_cb", %p, mLocEng);
+        locEngXtra->download_request_cb();
+    } else {
+        LOC_LOGE("Callback function for request xtra is NULL");
+    }
+}
+inline void LocEngRequestXtra::locallog() const {
+    LOC_LOGV("LocEngReqXtra");
+}
+inline void LocEngRequestXtra::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_REQUEST_TIME:
+LocEngRequestTime::LocEngRequestTime(void* locEng) :
+    LocMsg(), mLocEng(locEng)
+{
+    locallog();
+}
+void LocEngRequestTime::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    if (locEng->request_utc_time_cb != NULL) {
+        locEng->request_utc_time_cb();
+    } else {
+        LOC_LOGE("Callback function for request time is NULL");
+    }
+}
+inline void LocEngRequestTime::locallog() const {
+    LOC_LOGV("LocEngReqTime");
+}
+inline void LocEngRequestTime::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_DELETE_AIDING_DATA:
+struct LocEngDelAidData : public LocMsg {
+    loc_eng_data_s_type* mLocEng;
+    const GpsAidingData mType;
+    inline LocEngDelAidData(loc_eng_data_s_type* locEng,
+                            GpsAidingData f) :
+        LocMsg(), mLocEng(locEng), mType(f)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mLocEng->aiding_data_for_deletion = mType;
+        update_aiding_data_for_deletion(*mLocEng);
+    }
+    inline void locallog() const {
+        LOC_LOGV("aiding data msak %d", mType);
+    }
+    virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_ENABLE_DATA:
+struct LocEngEnableData : public LocMsg {
+    LocEngAdapter* mAdapter;
+    const int mEnable;
+    char* mAPN;
+    const int mLen;
+    inline LocEngEnableData(LocEngAdapter* adapter,
+                            const char* name, int len, int enable) :
+        LocMsg(), mAdapter(adapter),
+        mEnable(enable), mAPN(NULL), mLen(len)
+    {
+        if (NULL != name) {
+            mAPN = new char[len+1];
+            memcpy((void*)mAPN, (void*)name, len);
+            mAPN[len] = 0;
+        }
+        locallog();
+    }
+    inline ~LocEngEnableData() {
+        if (NULL != mAPN) {
+            delete[] mAPN;
+        }
+    }
+    inline virtual void proc() const {
+        mAdapter->enableData(mEnable);
+        if (NULL != mAPN) {
+            mAdapter->setAPN(mAPN, mLen);
+        }
+    }
+    inline void locallog() const {
+        LOC_LOGV("apn: %s\n  enable: %d",
+                 (NULL == mAPN) ? "NULL" : mAPN, mEnable);
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_INJECT_XTRA_DATA:
+// loc_eng_xtra.cpp
+
+//        case LOC_ENG_MSG_LOC_INIT:
+struct LocEngInit : public LocMsg {
+    loc_eng_data_s_type* mLocEng;
+    inline LocEngInit(loc_eng_data_s_type* locEng) :
+        LocMsg(), mLocEng(locEng)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        loc_eng_reinit(*mLocEng);
+    }
+    inline void locallog() const
+    {
+        LOC_LOGV("LocEngInit");
+    }
+    inline virtual void log() const
+    {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_REQUEST_XTRA_SERVER:
+// loc_eng_xtra.cpp
+
+//        case LOC_ENG_MSG_ATL_OPEN_SUCCESS:
+struct LocEngAtlOpenSuccess : public LocMsg {
+    AgpsStateMachine* mStateMachine;
+    const int mLen;
+    char* mAPN;
+    const AGpsBearerType mBearerType;
+    inline LocEngAtlOpenSuccess(AgpsStateMachine* statemachine,
+                                const char* name,
+                                int len,
+                                AGpsBearerType btype) :
+        LocMsg(),
+        mStateMachine(statemachine), mLen(len),
+        mAPN(new char[len+1]), mBearerType(btype)
+    {
+        memcpy((void*)mAPN, (void*)name, len);
+        mAPN[len] = 0;
+        locallog();
+    }
+    inline ~LocEngAtlOpenSuccess()
+    {
+        delete[] mAPN;
+    }
+    inline virtual void proc() const {
+        mStateMachine->setBearer(mBearerType);
+        mStateMachine->setAPN(mAPN, mLen);
+        mStateMachine->onRsrcEvent(RSRC_GRANTED);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngAtlClosed agps type: %s\n  apn: %s\n"
+                 "  bearer type: %s",
+                 loc_get_agps_type_name(mStateMachine->getType()),
+                 mAPN,
+                 loc_get_agps_bear_name(mBearerType));
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_ATL_CLOSED:
+struct LocEngAtlClosed : public LocMsg {
+    AgpsStateMachine* mStateMachine;
+    inline LocEngAtlClosed(AgpsStateMachine* statemachine) :
+        LocMsg(), mStateMachine(statemachine) {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mStateMachine->onRsrcEvent(RSRC_RELEASED);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngAtlClosed");
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_ATL_OPEN_FAILED:
+struct LocEngAtlOpenFailed : public LocMsg {
+    AgpsStateMachine* mStateMachine;
+    inline LocEngAtlOpenFailed(AgpsStateMachine* statemachine) :
+        LocMsg(), mStateMachine(statemachine) {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mStateMachine->onRsrcEvent(RSRC_DENIED);
+    }
+    inline void locallog() const {
+        LOC_LOGV("LocEngAtlOpenFailed");
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
+//        case LOC_ENG_MSG_ENGINE_DOWN:
+LocEngDown::LocEngDown(void* locEng) :
+    LocMsg(), mLocEng(locEng) {
+    locallog();
+}
+inline void LocEngDown::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    loc_eng_handle_engine_down(*locEng);
+}
+inline void LocEngDown::locallog() const {
+    LOC_LOGV("LocEngDown");
+}
+inline void LocEngDown::log() const {
+    locallog();
+}
+
+//        case LOC_ENG_MSG_ENGINE_UP:
+LocEngUp::LocEngUp(void* locEng) :
+    LocMsg(), mLocEng(locEng) {
+    locallog();
+}
+inline void LocEngUp::proc() const {
+    loc_eng_data_s_type* locEng = (loc_eng_data_s_type*)mLocEng;
+    loc_eng_handle_engine_up(*locEng);
+}
+inline void LocEngUp::locallog() const {
+    LOC_LOGV("LocEngUp");
+}
+inline void LocEngUp::log() const {
+    locallog();
+}
 
 /*********************************************************************
  * Initialization checking macros
@@ -181,27 +1384,6 @@ static int loc_eng_ulp_init(void* handle) ;
       ret;                                                        \
   }
 #define INIT_CHECK(ctx, ret) STATE_CHECK(ctx, "instance not initialized", ret)
-
-void loc_eng_msg_sender(void* loc_eng_data_p, void* msg)
-{
-    LocEngContext* loc_eng_context = (LocEngContext*)((loc_eng_data_s_type*)loc_eng_data_p)->context;
-    msg_q_snd((void*)loc_eng_context->deferred_q, msg, loc_eng_free_msg);
-}
-
-static void* loc_eng_create_msg_q()
-{
-    void* q = NULL;
-    if (eMSG_Q_SUCCESS != msg_q_init(&q)) {
-        LOC_LOGE("loc_eng_create_msg_q Q init failed.");
-        q = NULL;
-    }
-    return q;
-}
-
-static void loc_eng_free_msg(void* msg)
-{
-    delete (loc_eng_msg*)msg;
-}
 
 /*===========================================================================
 FUNCTION    loc_eng_init
@@ -222,23 +1404,23 @@ SIDE EFFECTS
 ===========================================================================*/
 int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
                  LOC_API_ADAPTER_EVENT_MASK_T event)
-{
-    ENTRY_LOG_CALLFLOW();
 
+{
+    int ret_val = 0;
+
+    ENTRY_LOG_CALLFLOW();
     if (NULL == callbacks || 0 == event) {
         LOC_LOGE("loc_eng_init: bad parameters cb %p eMask %d", callbacks, event);
-        EXIT_LOG(%d, 0);
-        return 0;
+        ret_val = -1;
+        EXIT_LOG(%d, ret_val);
+        return ret_val;
     }
 
-    STATE_CHECK((NULL == loc_eng_data.context),
+    STATE_CHECK((NULL == loc_eng_data.adapter),
                 "instance already initialized", return 0);
 
     memset(&loc_eng_data, 0, sizeof (loc_eng_data));
 
-    // Create context (msg q + thread) (if not yet created)
-    // This will also parse gps.conf, if not done.
-    loc_eng_data.context = (void*)LocEngContext::get(callbacks->create_thread_cb);
     if (NULL != callbacks->set_capabilities_cb) {
         callbacks->set_capabilities_cb(gps_conf.CAPABILITIES);
     }
@@ -250,7 +1432,11 @@ int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
     loc_eng_data.nmea_cb      = callbacks->nmea_cb;
     loc_eng_data.acquire_wakelock_cb = callbacks->acquire_wakelock_cb;
     loc_eng_data.release_wakelock_cb = callbacks->release_wakelock_cb;
-
+    loc_eng_data.request_utc_time_cb = callbacks->request_utc_time_cb;
+    loc_eng_data.location_ext_parser = callbacks->location_ext_parser ?
+        callbacks->location_ext_parser : noProc;
+    loc_eng_data.sv_ext_parser = callbacks->sv_ext_parser ?
+        callbacks->sv_ext_parser : noProc;
     loc_eng_data.intermediateFix = gps_conf.INTERMEDIATE_POS;
 
     // initial states taken care of by the memset above
@@ -258,32 +1444,31 @@ int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
     // loc_eng_data.fix_session_status -- GPS_STATUS_NONE;
     // loc_eng_data.mute_session_state -- LOC_MUTE_SESS_NONE;
 
-#ifdef QCOM_FEATURE_ULP
-    loc_eng_ulp_init(&loc_eng_data);
-#endif
-
-    LocEng locEngHandle(&loc_eng_data, event, loc_eng_data.acquire_wakelock_cb,
-                        loc_eng_data.release_wakelock_cb, loc_eng_msg_sender,
-                        callbacks->location_ext_parser, callbacks->sv_ext_parser);
-    loc_eng_data.client_handle = LocApiAdapter::getLocApiAdapter(locEngHandle);
-
-    int ret_val =-1;
-    if (NULL == loc_eng_data.client_handle) {
-        // drop the context and declare failure
-        ((LocEngContext*)(loc_eng_data.context))->drop();
-        loc_eng_data.context = NULL;
-    } else {
-        LOC_LOGD("loc_eng_init created client, id = %p\n", loc_eng_data.client_handle);
-
-        // call reinit to send initialization messages
-       int tries = 30;
-       while (tries > 0 &&
-              LOC_API_ADAPTER_ERR_SUCCESS != (ret_val = loc_eng_reinit(loc_eng_data))) {
-           tries--;
-           LOC_LOGD("loc_eng_init client open failed, %d more tries", tries);
-           sleep(1);
-       }
+    if ((event & LOC_API_ADAPTER_BIT_NMEA_1HZ_REPORT) && (gps_conf.NMEA_PROVIDER == NMEA_PROVIDER_AP))
+    {
+        event = event ^ LOC_API_ADAPTER_BIT_NMEA_1HZ_REPORT; // unregister for modem NMEA report
+        loc_eng_data.generateNmea = true;
     }
+    else
+    {
+        loc_eng_data.generateNmea = false;
+    }
+
+    //Disable AGPS if capabilities are not present
+    if(!(gps_conf.CAPABILITIES & GPS_CAPABILITY_MSA) &&
+       !(gps_conf.CAPABILITIES & GPS_CAPABILITY_MSA)) {
+        event &= ~(LOC_API_ADAPTER_BIT_LOCATION_SERVER_REQUEST |
+                   LOC_API_ADAPTER_BIT_NI_NOTIFY_VERIFY_REQUEST);
+    }
+
+    loc_eng_data.adapter =
+        new LocEngAdapter(event, &loc_eng_data,
+                          (MsgTask::tCreate)callbacks->create_thread_cb);
+
+    LOC_LOGD("loc_eng_init created client, id = %p\n",
+             loc_eng_data.adapter);
+
+    loc_eng_data.adapter->sendMsg(new LocEngInit(&loc_eng_data));
 
     EXIT_LOG(%d, ret_val);
     return ret_val;
@@ -292,39 +1477,50 @@ int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
 static int loc_eng_reinit(loc_eng_data_s_type &loc_eng_data)
 {
     ENTRY_LOG();
-    int ret_val = loc_eng_data.client_handle->reinit();
+    int ret_val = LOC_API_ADAPTER_ERR_SUCCESS;
 
     if (LOC_API_ADAPTER_ERR_SUCCESS == ret_val) {
         LOC_LOGD("loc_eng_reinit reinit() successful");
 
-        loc_eng_msg_suple_version *supl_msg(new loc_eng_msg_suple_version(&loc_eng_data,
-                                                                          gps_conf.SUPL_VER));
-        msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                  supl_msg, loc_eng_free_msg);
+        LocEngAdapter* adapter = loc_eng_data.adapter;
+        adapter->sendMsg(new LocEngSuplVer(adapter, gps_conf.SUPL_VER));
+        adapter->sendMsg(new LocEngLppConfig(adapter, gps_conf.LPP_PROFILE));
+        adapter->sendMsg(new LocEngSensorControlConfig(adapter, sap_conf.SENSOR_USAGE));
+        adapter->sendMsg(new LocEngAGlonassProtocol(adapter, gps_conf.A_GLONASS_POS_PROTOCOL_SELECT));
 
-        loc_eng_msg_sensor_control_config *sensor_control_config_msg(
-            new loc_eng_msg_sensor_control_config(&loc_eng_data, gps_conf.SENSOR_USAGE));
-        msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                  sensor_control_config_msg, loc_eng_free_msg);
-
-        /* Make sure this is specified by the user in the gps.conf file */
-        if(gps_conf.GYRO_BIAS_RANDOM_WALK_VALID)
+        /* Make sure at least one of the sensor property is specified by the user in the gps.conf file. */
+        if( sap_conf.GYRO_BIAS_RANDOM_WALK_VALID ||
+            sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+            sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+            sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+            sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID )
         {
-            loc_eng_msg_sensor_properties *sensor_properties_msg(
-                new loc_eng_msg_sensor_properties(&loc_eng_data, gps_conf.GYRO_BIAS_RANDOM_WALK));
-            msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                      sensor_properties_msg, loc_eng_free_msg);
+            adapter->sendMsg(new LocEngSensorProperties(adapter,
+                                                        sap_conf.GYRO_BIAS_RANDOM_WALK_VALID,
+                                                        sap_conf.GYRO_BIAS_RANDOM_WALK,
+                                                        sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                        sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                        sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                        sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                        sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                        sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                        sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                        sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY));
         }
 
-        loc_eng_msg_sensor_perf_control_config *sensor_perf_control_conf_msg(
-            new loc_eng_msg_sensor_perf_control_config(&loc_eng_data,
-                                                       gps_conf.SENSOR_CONTROL_MODE,
-                                                       gps_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH,
-                                                       gps_conf.SENSOR_ACCEL_BATCHES_PER_SEC,
-                                                       gps_conf.SENSOR_GYRO_SAMPLES_PER_BATCH,
-                                                       gps_conf.SENSOR_GYRO_BATCHES_PER_SEC));
-        msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                  sensor_perf_control_conf_msg, loc_eng_free_msg);
+        adapter->sendMsg(new LocEngSensorPerfControlConfig(adapter,
+                                                           sap_conf.SENSOR_CONTROL_MODE,
+                                                           sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH,
+                                                           sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC,
+                                                           sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH,
+                                                           sap_conf.SENSOR_GYRO_BATCHES_PER_SEC,
+                                                           sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH,
+                                                           sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC_HIGH,
+                                                           sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH,
+                                                           sap_conf.SENSOR_GYRO_BATCHES_PER_SEC_HIGH,
+                                                           sap_conf.SENSOR_ALGORITHM_CONFIG_MASK));
+
+        adapter->sendMsg(new LocEngEnableData(adapter, NULL, 0, (agpsStatus ? 1:0)));
     }
 
     EXIT_LOG(%d, ret_val);
@@ -350,7 +1546,7 @@ SIDE EFFECTS
 void loc_eng_cleanup(loc_eng_data_s_type &loc_eng_data)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return);
+    INIT_CHECK(loc_eng_data.adapter, return);
 
     // XTRA has no state, so we are fine with it.
 
@@ -366,7 +1562,7 @@ void loc_eng_cleanup(loc_eng_data_s_type &loc_eng_data)
         loc_eng_data.internet_nif = NULL;
     }
 #endif
-    if (loc_eng_data.navigating)
+    if (loc_eng_data.adapter->isInSession())
     {
         LOC_LOGD("loc_eng_cleanup: fix not stopped. stop it now.");
         loc_eng_stop(loc_eng_data);
@@ -374,34 +1570,12 @@ void loc_eng_cleanup(loc_eng_data_s_type &loc_eng_data)
 
 #if 0 // can't afford to actually clean up, for many reason.
 
-    ((LocEngContext*)(loc_eng_data.context))->drop();
-    loc_eng_data.context = NULL;
+    LOC_LOGD("loc_eng_init: client opened. close it now.");
+    delete loc_eng_data.adapter;
+    loc_eng_data.adapter = NULL;
 
-    // De-initialize ulp
-    if (locEngUlpInf != NULL)
-    {
-        locEngUlpInf->destroy ();
-        locEngUlpInf = NULL;
-    }
-
-    if (loc_eng_data.client_handle != NULL)
-    {
-        LOC_LOGD("loc_eng_init: client opened. close it now.");
-        delete loc_eng_data.client_handle;
-        loc_eng_data.client_handle = NULL;
-    }
-
-#ifdef FEATURE_GNSS_BIT_API
-    {
-        char baseband[PROPERTY_VALUE_MAX];
-        property_get("ro.baseband", baseband, "msm");
-        if ((strcmp(baseband,"svlte2a") == 0))
-        {
-            loc_eng_dmn_conn_loc_api_server_unblock();
-            loc_eng_dmn_conn_loc_api_server_join();
-        }
-    }
-#endif /* FEATURE_GNSS_BIT_API */
+    loc_eng_dmn_conn_loc_api_server_unblock();
+    loc_eng_dmn_conn_loc_api_server_join();
 
 #endif
 
@@ -428,11 +1602,12 @@ SIDE EFFECTS
 int loc_eng_start(loc_eng_data_s_type &loc_eng_data)
 {
    ENTRY_LOG_CALLFLOW();
-   INIT_CHECK(loc_eng_data.context, return -1);
+   INIT_CHECK(loc_eng_data.adapter, return -1);
 
-   loc_eng_msg *msg(new loc_eng_msg(&loc_eng_data, LOC_ENG_MSG_START_FIX));
-   msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-             msg, loc_eng_free_msg);
+   if(! loc_eng_data.adapter->getUlpProxy()->sendStartFix())
+   {
+       loc_eng_data.adapter->sendMsg(new LocEngStartFix(loc_eng_data.adapter));
+   }
 
    EXIT_LOG(%d, 0);
    return 0;
@@ -443,21 +1618,14 @@ static int loc_eng_start_handler(loc_eng_data_s_type &loc_eng_data)
    ENTRY_LOG();
    int ret_val = LOC_API_ADAPTER_ERR_SUCCESS;
 
-   if (!loc_eng_data.navigating) {
-#ifdef QCOM_FEATURE_ULP
-       if (NULL == locEngUlpInf ||
-           locEngUlpInf->start_fix () == 1) {
-           ret_val = loc_eng_data.client_handle->startFix();
-       }
-#else
-       ret_val = loc_eng_data.client_handle->startFix();
-#endif
+   if (!loc_eng_data.adapter->isInSession()) {
+       ret_val = loc_eng_data.adapter->startFix();
 
        if (ret_val == LOC_API_ADAPTER_ERR_SUCCESS ||
            ret_val == LOC_API_ADAPTER_ERR_ENGINE_DOWN)
        {
+           loc_eng_data.adapter->setInSession(TRUE);
            loc_inform_gps_status(loc_eng_data, GPS_STATUS_SESSION_BEGIN);
-           loc_eng_data.navigating = TRUE;
        }
    }
 
@@ -466,7 +1634,7 @@ static int loc_eng_start_handler(loc_eng_data_s_type &loc_eng_data)
 }
 
 /*===========================================================================
-FUNCTION    loc_eng_stop
+FUNCTION    loc_eng_stop_wrapper
 
 DESCRIPTION
    Stops the tracking session
@@ -484,11 +1652,12 @@ SIDE EFFECTS
 int loc_eng_stop(loc_eng_data_s_type &loc_eng_data)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
+    INIT_CHECK(loc_eng_data.adapter, return -1);
 
-    loc_eng_msg *msg(new loc_eng_msg(&loc_eng_data, LOC_ENG_MSG_STOP_FIX));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    if(! loc_eng_data.adapter->getUlpProxy()->sendStopFix())
+    {
+        loc_eng_data.adapter->sendMsg(new LocEngStopFix(loc_eng_data.adapter));
+    }
 
     EXIT_LOG(%d, 0);
     return 0;
@@ -499,22 +1668,15 @@ static int loc_eng_stop_handler(loc_eng_data_s_type &loc_eng_data)
    ENTRY_LOG();
    int ret_val = LOC_API_ADAPTER_ERR_SUCCESS;
 
-   if (loc_eng_data.navigating) {
-#ifdef QCOM_FEATURE_ULP
-       // Stops the ULP
-       if (locEngUlpInf != NULL)
-       {
-           locEngUlpInf->stop_fix ();
-       }
-#endif
+   if (loc_eng_data.adapter->isInSession()) {
 
-       ret_val = loc_eng_data.client_handle->stopFix();
+       ret_val = loc_eng_data.adapter->stopFix();
        if (ret_val == LOC_API_ADAPTER_ERR_SUCCESS)
        {
            loc_inform_gps_status(loc_eng_data, GPS_STATUS_SESSION_END);
        }
 
-       loc_eng_data.navigating = FALSE;
+       loc_eng_data.adapter->setInSession(FALSE);
    }
 
     EXIT_LOG(%d, ret_val);
@@ -561,20 +1723,16 @@ SIDE EFFECTS
 
 ===========================================================================*/
 int loc_eng_set_position_mode(loc_eng_data_s_type &loc_eng_data,
-                              LocPositionMode mode,
-                              GpsPositionRecurrence recurrence,
-                              uint32_t min_interval,
-                              uint32_t preferred_accuracy,
-                              uint32_t preferred_time)
+                              LocPosMode &params)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
-    loc_eng_msg_position_mode *msg(
-        new loc_eng_msg_position_mode(&loc_eng_data, mode,
-                                      recurrence, min_interval,
-                                      preferred_accuracy, preferred_time));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    INIT_CHECK(loc_eng_data.adapter, return -1);
+
+    if(! loc_eng_data.adapter->getUlpProxy()->sendFixMode(params))
+    {
+        LocEngAdapter* adapter = loc_eng_data.adapter;
+        adapter->sendMsg(new LocEngPositionMode(adapter, params));
+    }
 
     EXIT_LOG(%d, 0);
     return 0;
@@ -600,15 +1758,12 @@ int loc_eng_inject_time(loc_eng_data_s_type &loc_eng_data, GpsUtcTime time,
                         int64_t timeReference, int uncertainty)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
-    loc_eng_msg_set_time *msg(
-        new loc_eng_msg_set_time(&loc_eng_data,
-                                 time,
-                                 timeReference,
-                                 uncertainty));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
-
+    INIT_CHECK(loc_eng_data.adapter, return -1);
+    LocEngAdapter* adapter = loc_eng_data.adapter;
+    if (adapter->mAgpsEnabled) {
+        adapter->sendMsg(new LocEngSetTime(adapter, time, timeReference,
+                                           uncertainty));
+    }
     EXIT_LOG(%d, 0);
     return 0;
 }
@@ -634,14 +1789,10 @@ int loc_eng_inject_location(loc_eng_data_s_type &loc_eng_data, double latitude,
                             double longitude, float accuracy)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
-    loc_eng_msg_inject_location *msg(
-        new loc_eng_msg_inject_location(&loc_eng_data,
-                                        latitude,
-                                        longitude,
-                                        accuracy));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    INIT_CHECK(loc_eng_data.adapter, return -1);
+    LocEngAdapter* adapter = loc_eng_data.adapter;
+    adapter->sendMsg(new LocEngInjectLocation(adapter, latitude, longitude,
+                                              accuracy));
 
     EXIT_LOG(%d, 0);
     return 0;
@@ -671,18 +1822,15 @@ SIDE EFFECTS
 void loc_eng_delete_aiding_data(loc_eng_data_s_type &loc_eng_data, GpsAidingData f)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return);
+    INIT_CHECK(loc_eng_data.adapter, return);
 
-    loc_eng_msg_delete_aiding_data *msg(
-        new loc_eng_msg_delete_aiding_data(&loc_eng_data,
-                                           f));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    loc_eng_data.adapter->sendMsg(new LocEngDelAidData(&loc_eng_data, f));
 
     EXIT_LOG(%s, VOID_RET);
 }
 
 /*===========================================================================
+
 FUNCTION    loc_inform_gps_state
 
 DESCRIPTION
@@ -702,20 +1850,47 @@ static void loc_inform_gps_status(loc_eng_data_s_type &loc_eng_data, GpsStatusVa
 {
     ENTRY_LOG();
 
-    static GpsStatusValue last_status = GPS_STATUS_NONE;
-
-    GpsStatus gs = { sizeof(gs),status };
-
-
     if (loc_eng_data.status_cb)
     {
-        CALLBACK_LOG_CALLFLOW("status_cb", %s, loc_get_gps_status_name(gs.status));
+        GpsStatus gs = { sizeof(gs),status };
+        CALLBACK_LOG_CALLFLOW("status_cb", %s,
+                              loc_get_gps_status_name(gs.status));
         loc_eng_data.status_cb(&gs);
     }
 
-    last_status = status;
-
     EXIT_LOG(%s, VOID_RET);
+}
+
+/*
+  Callback function passed to Data Services State Machine
+  This becomes part of the state machine's servicer and
+  is used to send requests to the data services client
+*/
+static int dataCallCb(void *cb_data)
+{
+    LOC_LOGD("Enter dataCallCb\n");
+    int ret=0;
+    if(cb_data != NULL) {
+        dsCbData *cbData = (dsCbData *)cb_data;
+        LocEngAdapter *locAdapter = (LocEngAdapter *)cbData->mAdapter;
+        if(cbData->action == GPS_REQUEST_AGPS_DATA_CONN) {
+            LOC_LOGD("dataCallCb GPS_REQUEST_AGPS_DATA_CONN\n");
+            ret =  locAdapter->openAndStartDataCall();
+        }
+        else if(cbData->action == GPS_RELEASE_AGPS_DATA_CONN) {
+            LOC_LOGD("dataCallCb GPS_RELEASE_AGPS_DATA_CONN\n");
+            locAdapter->stopDataCall();
+        }
+    }
+    else {
+        LOC_LOGE("NULL argument received. Failing.\n");
+        ret = -1;
+        goto err;
+    }
+
+err:
+    LOC_LOGD("Exit dataCallCb ret = %d\n", ret);
+    return ret;
 }
 
 /*===========================================================================
@@ -752,7 +1927,7 @@ static void loc_eng_agps_reinit(loc_eng_data_s_type &loc_eng_data)
                            loc_eng_data.c2k_host_buf,
                            loc_eng_data.c2k_port_buf);
     }
-    EXIT_LOG(%p, VOID_RET);
+    EXIT_LOG(%s, VOID_RET);
 }
 /*===========================================================================
 FUNCTION    loc_eng_agps_init
@@ -770,39 +1945,87 @@ SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-void loc_eng_agps_init(loc_eng_data_s_type &loc_eng_data, AGpsCallbacks* callbacks)
+void loc_eng_agps_init(loc_eng_data_s_type &loc_eng_data, AGpsExtCallbacks* callbacks)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return);
+    INIT_CHECK(loc_eng_data.adapter, return);
     STATE_CHECK((NULL == loc_eng_data.agps_status_cb),
                 "agps instance already initialized",
                 return);
+    if(callbacks == NULL) {
+        LOC_LOGE("loc_eng_agps_init: bad parameters cb %p", callbacks);
+        EXIT_LOG(%s, VOID_RET);
+        return;
+    }
+
+    //Proceed to create AGPS framework only if MSA or MSB capabilities
+    //are present. If the target is an APQ, these masks are
+    //cleared in get_gps_interface()
+    if(!(gps_conf.CAPABILITIES & GPS_CAPABILITY_MSA) &&
+       !(gps_conf.CAPABILITIES & GPS_CAPABILITY_MSB) ) {
+        LOC_LOGD("%s:%d]: No AGPS capabilities found. Returning\n",
+                 __func__, __LINE__);
+        return;
+    }
+
     loc_eng_data.agps_status_cb = callbacks->status_cb;
 
-    loc_eng_data.agnss_nif = new AgpsStateMachine(loc_eng_data.agps_status_cb,
-                                                  AGPS_TYPE_SUPL);
-#ifdef QCOM_FEATURE_IPV6
-    loc_eng_data.internet_nif = new AgpsStateMachine(loc_eng_data.agps_status_cb,
-                                                     AGPS_TYPE_WWAN_ANY);
-#else
-    loc_eng_data.internet_nif = new AgpsStateMachine(loc_eng_data.agps_status_cb,
-                                                     AGPS_TYPE_SUPL);
-#endif
-
-#ifdef FEATURE_GNSS_BIT_API
-    {
-        char baseband[PROPERTY_VALUE_MAX];
-        property_get("ro.baseband", baseband, "msm");
-        if ((strcmp(baseband,"svlte2a") == 0))
-        {
-            loc_eng_dmn_conn_loc_api_server_launch(callbacks->create_thread_cb,
-                                                   NULL, NULL, &loc_eng_data);
-        }
+    loc_eng_data.agnss_nif = new AgpsStateMachine(servicerTypeAgps,
+                                                  (void *)loc_eng_data.agps_status_cb,
+                                                  AGPS_TYPE_SUPL,
+                                                  false);
+    loc_eng_data.internet_nif = new AgpsStateMachine(servicerTypeAgps,
+                                                     (void *)loc_eng_data.agps_status_cb,
+                                                     AGPS_TYPE_WWAN_ANY,
+                                                     false);
+    loc_eng_data.wifi_nif = new AgpsStateMachine(servicerTypeAgps,
+                                                 (void *)loc_eng_data.agps_status_cb,
+                                                 AGPS_TYPE_WIFI,
+                                                 true);
+    if(!loc_eng_data.adapter->initDataServiceClient()) {
+        LOC_LOGD("%s:%d]: Creating new ds state machine\n", __func__, __LINE__);
+        loc_eng_data.ds_nif = new DSStateMachine(servicerTypeExt,
+                                                 (void *)dataCallCb,
+                                                 loc_eng_data.adapter);
+        LOC_LOGD("%s:%d]: Created new ds state machine\n", __func__, __LINE__);
     }
-#endif /* FEATURE_GNSS_BIT_API */
+
+    //loc_eng_dmn_conn_loc_api_server_launch(callbacks->create_thread_cb,
+    //                                               NULL, NULL, &loc_eng_data);
 
     loc_eng_agps_reinit(loc_eng_data);
-    EXIT_LOG(%p, VOID_RET);
+    EXIT_LOG(%s, VOID_RET);
+}
+
+static void deleteAidingData(loc_eng_data_s_type &logEng) {
+    if (logEng.engine_status != GPS_STATUS_ENGINE_ON &&
+        logEng.aiding_data_for_deletion != 0) {
+        logEng.adapter->deleteAidingData(logEng.aiding_data_for_deletion);
+        logEng.aiding_data_for_deletion = 0;
+    }
+}
+
+static AgpsStateMachine*
+getAgpsStateMachine(loc_eng_data_s_type &locEng, AGpsExtType agpsType) {
+    AgpsStateMachine* stateMachine;
+    switch (agpsType) {
+    case AGPS_TYPE_WIFI: {
+        stateMachine = locEng.wifi_nif;
+        break;
+    }
+    case AGPS_TYPE_INVALID:
+    case AGPS_TYPE_SUPL: {
+        stateMachine = locEng.agnss_nif;
+        break;
+    }
+    case AGPS_TYPE_SUPL_ES: {
+        stateMachine = locEng.ds_nif;
+        break;
+    }
+    default:
+        stateMachine  = locEng.internet_nif;
+    }
+    return stateMachine;
 }
 
 /*===========================================================================
@@ -822,12 +2045,11 @@ SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-#ifdef QCOM_FEATURE_IPV6
-int loc_eng_agps_open(loc_eng_data_s_type &loc_eng_data, AGpsType agpsType,
+int loc_eng_agps_open(loc_eng_data_s_type &loc_eng_data, AGpsExtType agpsType,
                      const char* apn, AGpsBearerType bearerType)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
+    INIT_CHECK(loc_eng_data.adapter && loc_eng_data.agps_status_cb,
                return -1);
 
     if (apn == NULL)
@@ -839,42 +2061,14 @@ int loc_eng_agps_open(loc_eng_data_s_type &loc_eng_data, AGpsType agpsType,
     LOC_LOGD("loc_eng_agps_open APN name = [%s]", apn);
 
     int apn_len = smaller_of(strlen (apn), MAX_APN_LEN);
-    loc_eng_msg_atl_open_success *msg(
-        new loc_eng_msg_atl_open_success(&loc_eng_data, agpsType, apn,
-                                        apn_len, bearerType));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    AgpsStateMachine* sm = getAgpsStateMachine(loc_eng_data, agpsType);
+
+    loc_eng_data.adapter->sendMsg(
+        new LocEngAtlOpenSuccess(sm, apn, apn_len, bearerType));
 
     EXIT_LOG(%d, 0);
     return 0;
 }
-#else
-int loc_eng_agps_open(loc_eng_data_s_type &loc_eng_data,
-                     const char* apn)
-{
-    ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
-               return -1);
-
-    if (apn == NULL)
-    {
-        LOC_LOGE("APN Name NULL\n");
-        return 0;
-    }
-
-    LOC_LOGD("loc_eng_agps_open APN name = [%s]", apn);
-
-    int apn_len = smaller_of(strlen (apn), MAX_APN_LEN);
-    loc_eng_msg_atl_open_success *msg(
-        new loc_eng_msg_atl_open_success(&loc_eng_data, apn,
-                                        apn_len));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
-
-    EXIT_LOG(%d, 0);
-    return 0;
-}
-#endif
 
 /*===========================================================================
 FUNCTION    loc_eng_agps_closed
@@ -893,35 +2087,18 @@ SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-#ifdef QCOM_FEATURE_IPV6
-int loc_eng_agps_closed(loc_eng_data_s_type &loc_eng_data, AGpsType agpsType)
+int loc_eng_agps_closed(loc_eng_data_s_type &loc_eng_data, AGpsExtType agpsType)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
+    INIT_CHECK(loc_eng_data.adapter && loc_eng_data.agps_status_cb,
                return -1);
 
-    loc_eng_msg_atl_closed *msg(new loc_eng_msg_atl_closed(&loc_eng_data, agpsType));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    AgpsStateMachine* sm = getAgpsStateMachine(loc_eng_data, agpsType);
+    loc_eng_data.adapter->sendMsg(new LocEngAtlClosed(sm));
 
     EXIT_LOG(%d, 0);
     return 0;
 }
-#else
-int loc_eng_agps_closed(loc_eng_data_s_type &loc_eng_data)
-{
-    ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
-               return -1);
-
-    loc_eng_msg_atl_closed *msg(new loc_eng_msg_atl_closed(&loc_eng_data));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
-
-    EXIT_LOG(%d, 0);
-    return 0;
-}
-#endif
 
 /*===========================================================================
 FUNCTION    loc_eng_agps_open_failed
@@ -940,35 +2117,18 @@ SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-#ifdef QCOM_FEATURE_IPV6
-int loc_eng_agps_open_failed(loc_eng_data_s_type &loc_eng_data, AGpsType agpsType)
+int loc_eng_agps_open_failed(loc_eng_data_s_type &loc_eng_data, AGpsExtType agpsType)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
+    INIT_CHECK(loc_eng_data.adapter && loc_eng_data.agps_status_cb,
                return -1);
 
-    loc_eng_msg_atl_open_failed *msg(new loc_eng_msg_atl_open_failed(&loc_eng_data, agpsType));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
+    AgpsStateMachine* sm = getAgpsStateMachine(loc_eng_data, agpsType);
+    loc_eng_data.adapter->sendMsg(new LocEngAtlOpenFailed(sm));
 
     EXIT_LOG(%d, 0);
     return 0;
 }
-#else
-int loc_eng_agps_open_failed(loc_eng_data_s_type &loc_eng_data)
-{
-    ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context && loc_eng_data.agps_status_cb,
-               return -1);
-
-    loc_eng_msg_atl_open_failed *msg(new loc_eng_msg_atl_open_failed(&loc_eng_data));
-    msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-              msg, loc_eng_free_msg);
-
-    EXIT_LOG(%d, 0);
-    return 0;
-}
-#endif
 
 /*===========================================================================
 
@@ -1035,16 +2195,14 @@ static int loc_eng_set_server(loc_eng_data_s_type &loc_eng_data,
 {
     ENTRY_LOG();
     int ret = 0;
+    LocEngAdapter* adapter = loc_eng_data.adapter;
 
     if (LOC_AGPS_SUPL_SERVER == type) {
         char url[MAX_URL_LEN];
         unsigned int len = snprintf(url, sizeof(url), "%s:%u", hostname, (unsigned) port);
 
         if (sizeof(url) > len) {
-            loc_eng_msg_set_server_url *msg(new loc_eng_msg_set_server_url(&loc_eng_data,
-                                                                           url, len));
-            msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                      msg, loc_eng_free_msg);
+            adapter->sendMsg(new LocEngSetServerUrl(adapter, url, len));
         }
     } else if (LOC_AGPS_CDMA_PDE_SERVER == type ||
                LOC_AGPS_CUSTOM_PDE_SERVER == type ||
@@ -1056,12 +2214,7 @@ static int loc_eng_set_server(loc_eng_data_s_type &loc_eng_data,
             ret = -2;
         } else {
             unsigned int ip = htonl(addr.s_addr);
-            loc_eng_msg_set_server_ipv4 *msg(new loc_eng_msg_set_server_ipv4(&loc_eng_data,
-                                                                             ip,
-                                                                             port,
-                                                                             type));
-            msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                      msg, loc_eng_free_msg);
+            adapter->sendMsg(new LocEngSetServerIpv4(adapter, ip, port, type));
         }
     } else {
         LOC_LOGE("loc_eng_set_server, type %d cannot be resolved.\n", type);
@@ -1096,7 +2249,7 @@ int loc_eng_set_server_proxy(loc_eng_data_s_type &loc_eng_data,
     ENTRY_LOG_CALLFLOW();
     int ret_val = 0;
 
-    if (NULL != loc_eng_data.context)
+    if (NULL != loc_eng_data.adapter)
     {
         ret_val = loc_eng_set_server(loc_eng_data, type, hostname, port);
     } else {
@@ -1146,15 +2299,21 @@ void loc_eng_agps_ril_update_network_availability(loc_eng_data_s_type &loc_eng_d
                                                   int available, const char* apn)
 {
     ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return);
+
+    //This is to store the status of data availability over the network.
+    //If GPS is not enabled, the INIT_CHECK will fail and the modem will
+    //not be updated with the network's availability. Since the data status
+    //can change before GPS is enabled the, storing the status will enable
+    //us to inform the modem after GPS is enabled
+    agpsStatus = available;
+
+    INIT_CHECK(loc_eng_data.adapter, return);
     if (apn != NULL)
     {
         LOC_LOGD("loc_eng_agps_ril_update_network_availability: APN Name = [%s]\n", apn);
         int apn_len = smaller_of(strlen (apn), MAX_APN_LEN);
-        loc_eng_msg_set_data_enable *msg(new loc_eng_msg_set_data_enable(&loc_eng_data, apn,
-                                                                         apn_len, available));
-        msg_q_snd((void*)((LocEngContext*)(loc_eng_data.context))->deferred_q,
-                  msg, loc_eng_free_msg);
+        LocEngAdapter* adapter = loc_eng_data.adapter;
+        adapter->sendMsg(new LocEngEnableData(adapter, apn,  apn_len, available));
     }
     EXIT_LOG(%s, VOID_RET);
 }
@@ -1197,9 +2356,10 @@ static void loc_eng_report_status (loc_eng_data_s_type &loc_eng_data, GpsStatusV
     }
 
     // Session End is not reported during Android navigating state
+    boolean navigating = loc_eng_data.adapter->isInSession();
     if (status != GPS_STATUS_NONE &&
-        !(status == GPS_STATUS_SESSION_END && loc_eng_data.navigating) &&
-        !(status == GPS_STATUS_SESSION_BEGIN && !loc_eng_data.navigating))
+        !(status == GPS_STATUS_SESSION_END && navigating) &&
+        !(status == GPS_STATUS_SESSION_BEGIN && !navigating))
     {
         if (loc_eng_data.mute_session_state != LOC_MUTE_SESS_IN_SESSION)
         {
@@ -1267,565 +2427,70 @@ void loc_eng_handle_engine_up(loc_eng_data_s_type &loc_eng_data)
     loc_eng_report_status(loc_eng_data, GPS_STATUS_ENGINE_ON);
 
     // modem is back up.  If we crashed in the middle of navigating, we restart.
-    if (loc_eng_data.navigating) {
-        loc_eng_data.client_handle->setPositionMode(
-            loc_eng_data.position_mode.pMode,
-            loc_eng_data.position_mode.pRecurrence,
-            loc_eng_data.position_mode.minInterval,
-            loc_eng_data.position_mode.preferredAccuracy,
-            loc_eng_data.position_mode.preferredTime);
-        // not mutex protected, assuming fw won't call start twice without a
-        // stop call in between.
+    if (loc_eng_data.adapter->isInSession()) {
+        // This sets the copy in adapter to modem
+        loc_eng_data.adapter->setPositionMode(NULL);
+        loc_eng_data.adapter->setInSession(false);
         loc_eng_start_handler(loc_eng_data);
     }
     EXIT_LOG(%s, VOID_RET);
 }
 
+#ifdef USE_GLIB
 /*===========================================================================
-FUNCTION loc_eng_deferred_action_thread
+FUNCTION set_sched_policy
 
 DESCRIPTION
-   Main routine for the thread to execute loc_eng commands.
+   Local copy of this function which bypasses android set_sched_policy
 
 DEPENDENCIES
    None
 
 RETURN VALUE
-   None
+   0
 
 SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-static void loc_eng_deferred_action_thread(void* arg)
+static int set_sched_policy(int tid, SchedPolicy policy)
 {
-    ENTRY_LOG();
-    loc_eng_msg *msg;
-    static int cnt = 0;
-    LocEngContext* context = (LocEngContext*)arg;
-
-    // make sure we do not run in background scheduling group
-    set_sched_policy(gettid(), SP_FOREGROUND);
-
-    while (1)
-    {
-        LOC_LOGD("%s:%d] %d listening ...\n", __func__, __LINE__, cnt++);
-
-        // we are only sending / receiving msg pointers
-        msq_q_err_type result = msg_q_rcv((void*)context->deferred_q, (void **) &msg);
-        if (eMSG_Q_SUCCESS != result) {
-            LOC_LOGE("%s:%d] fail receiving msg: %s\n", __func__, __LINE__,
-                     loc_get_msg_q_status(result));
-            return;
-        }
-
-        loc_eng_data_s_type* loc_eng_data_p = (loc_eng_data_s_type*)msg->owner;
-
-        LOC_LOGD("%s:%d] received msg_id = %s context = %p\n",
-                 __func__, __LINE__, loc_get_msg_name(msg->msgid), loc_eng_data_p->context);
-
-        // need to ensure the instance data is valid
-        STATE_CHECK(NULL != loc_eng_data_p->context,
-                    "instance cleanup happened",
-                    delete msg; return);
-
-        switch(msg->msgid) {
-        case LOC_ENG_MSG_QUIT:
-        {
-            LocEngContext* context = (LocEngContext*)loc_eng_data_p->context;
-            pthread_mutex_lock(&(context->lock));
-            pthread_cond_signal(&(context->cond));
-            pthread_mutex_unlock(&(context->lock));
-            EXIT_LOG(%s, "LOC_ENG_MSG_QUIT, signal the main thread and return");
-        }
-        return;
-
-        case LOC_ENG_MSG_REQUEST_NI:
-        {
-            loc_eng_msg_request_ni *niMsg = (loc_eng_msg_request_ni*)msg;
-            loc_eng_ni_request_handler(*loc_eng_data_p, &niMsg->notify, niMsg->passThroughData);
-        }
-        break;
-
-        case LOC_ENG_MSG_INFORM_NI_RESPONSE:
-        {
-            loc_eng_msg_inform_ni_response *nrMsg = (loc_eng_msg_inform_ni_response*)msg;
-            loc_eng_data_p->client_handle->informNiResponse(nrMsg->response,
-                                                            nrMsg->passThroughData);
-        }
-        break;
-
-        case LOC_ENG_MSG_START_FIX:
-            loc_eng_start_handler(*loc_eng_data_p);
-            break;
-
-        case LOC_ENG_MSG_STOP_FIX:
-            if (loc_eng_data_p->agps_request_pending)
-            {
-                loc_eng_data_p->stop_request_pending = true;
-                LOC_LOGD("loc_eng_stop - deferring stop until AGPS data call is finished\n");
-            } else {
-                loc_eng_stop_handler(*loc_eng_data_p);
-            }
-            break;
-
-        case LOC_ENG_MSG_SET_POSITION_MODE:
-        {
-            loc_eng_msg_position_mode *pmMsg = (loc_eng_msg_position_mode*)msg;
-            loc_eng_data_p->client_handle->setPositionMode(pmMsg->pMode, pmMsg->pRecurrence,
-                                                           pmMsg->minInterval,pmMsg->preferredAccuracy,
-                                                           pmMsg->preferredTime);
-            memcpy((void*)&loc_eng_data_p->position_mode, (void*)pmMsg, sizeof(*pmMsg));
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_TIME:
-        {
-            loc_eng_msg_set_time *tMsg = (loc_eng_msg_set_time*)msg;
-            loc_eng_data_p->client_handle->setTime(tMsg->time, tMsg->timeReference,
-                                                   tMsg->uncertainty);
-        }
-        break;
-
-        case LOC_ENG_MSG_INJECT_LOCATION:
-        {
-            loc_eng_msg_inject_location *ilMsg = (loc_eng_msg_inject_location*) msg;
-            loc_eng_data_p->client_handle->injectPosition(ilMsg->latitude, ilMsg->longitude,
-                                                          ilMsg->accuracy);
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_SERVER_IPV4:
-        {
-            loc_eng_msg_set_server_ipv4 *ssiMsg = (loc_eng_msg_set_server_ipv4*)msg;
-            loc_eng_data_p->client_handle->setServer(ssiMsg->nl_addr,
-                                                     ssiMsg->port,
-                                                     ssiMsg->serverType);
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_SERVER_URL:
-        {
-            loc_eng_msg_set_server_url *ssuMsg = (loc_eng_msg_set_server_url*)msg;
-            loc_eng_data_p->client_handle->setServer(ssuMsg->url, ssuMsg->len);
-        }
-        break;
-
-        case LOC_ENG_MSG_SUPL_VERSION:
-        {
-            loc_eng_msg_suple_version *svMsg = (loc_eng_msg_suple_version*)msg;
-            loc_eng_data_p->client_handle->setSUPLVersion(svMsg->supl_version);
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_SENSOR_CONTROL_CONFIG:
-        {
-            loc_eng_msg_sensor_control_config *sccMsg = (loc_eng_msg_sensor_control_config*)msg;
-            loc_eng_data_p->client_handle->setSensorControlConfig(sccMsg->sensorsDisabled);
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_SENSOR_PROPERTIES:
-        {
-            loc_eng_msg_sensor_properties *spMsg = (loc_eng_msg_sensor_properties*)msg;
-            loc_eng_data_p->client_handle->setSensorProperties(spMsg->gyroBiasVarianceRandomWalk);
-        }
-        break;
-
-        case LOC_ENG_MSG_SET_SENSOR_PERF_CONTROL_CONFIG:
-        {
-            loc_eng_msg_sensor_perf_control_config *spccMsg = (loc_eng_msg_sensor_perf_control_config*)msg;
-            loc_eng_data_p->client_handle->setSensorPerfControlConfig(spccMsg->controlMode, spccMsg->accelSamplesPerBatch, spccMsg->accelBatchesPerSec,
-                                                                      spccMsg->gyroSamplesPerBatch, spccMsg->gyroBatchesPerSec);
-        }
-        break;
-
-        case LOC_ENG_MSG_REPORT_POSITION:
-            if (loc_eng_data_p->mute_session_state != LOC_MUTE_SESS_IN_SESSION)
-            {
-                loc_eng_msg_report_position *rpMsg = (loc_eng_msg_report_position*)msg;
-                if (loc_eng_data_p->location_cb != NULL) {
-                    if (LOC_SESS_FAILURE == rpMsg->status) {
-                        // in case we want to handle the failure case
-                        loc_eng_data_p->location_cb(NULL, NULL);
-                    }
-                    // what's in the else if is... (line by line)
-                    // 1. this is a good fix; or
-                    // 2. (must be intermediate fix... implicit)
-                    //   2.1 we accepte intermediate; and
-                    //   2.2 it is NOT the case that
-                    //   2.2.1 there is inaccuracy; and
-                    //   2.2.2 we care about inaccuracy; and
-                    //   2.2.3 the inaccuracy exceeds our tolerance
-                    else if (LOC_SESS_SUCCESS == rpMsg->status ||
-                             (LOC_SESS_INTERMEDIATE == loc_eng_data_p->intermediateFix &&
-                              !((rpMsg->location.flags & GPS_LOCATION_HAS_ACCURACY) &&
-                                (gps_conf.ACCURACY_THRES != 0) &&
-                                (rpMsg->location.accuracy > gps_conf.ACCURACY_THRES)))) {
-                        loc_eng_data_p->location_cb((GpsLocation*)&(rpMsg->location),
-                                                    (void*)rpMsg->locationExt);
-                    }
-                }
-            }
-
-            break;
-
-        case LOC_ENG_MSG_REPORT_SV:
-            if (loc_eng_data_p->mute_session_state != LOC_MUTE_SESS_IN_SESSION)
-            {
-                loc_eng_msg_report_sv *rsMsg = (loc_eng_msg_report_sv*)msg;
-                if (loc_eng_data_p->sv_status_cb != NULL) {
-                    loc_eng_data_p->sv_status_cb((GpsSvStatus*)&(rsMsg->svStatus),
-                                                 (void*)rsMsg->svExt);
-                }
-            }
-            break;
-
-        case LOC_ENG_MSG_REPORT_STATUS:
-            loc_eng_report_status(*loc_eng_data_p, ((loc_eng_msg_report_status*)msg)->status);
-            break;
-
-        case LOC_ENG_MSG_REPORT_NMEA:
-            if (NULL != loc_eng_data_p->nmea_cb) {
-                loc_eng_msg_report_nmea* nmMsg = (loc_eng_msg_report_nmea*)msg;
-                struct timeval tv;
-                gettimeofday(&tv, (struct timezone *) NULL);
-                int64_t now = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
-                CALLBACK_LOG_CALLFLOW("nmea_cb", %p, nmMsg->nmea);
-                loc_eng_data_p->nmea_cb(now, nmMsg->nmea, nmMsg->length);
-            }
-            break;
-
-        case LOC_ENG_MSG_REQUEST_BIT:
-        {
-            loc_eng_msg_request_bit* brqMsg = (loc_eng_msg_request_bit*)msg;
-            AgpsStateMachine* stateMachine = (brqMsg->isSupl) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-            BITSubscriber subscriber(stateMachine, brqMsg->ipv4Addr, brqMsg->ipv6Addr);
-
-            stateMachine->subscribeRsrc((Subscriber*)&subscriber);
-        }
-        break;
-
-        case LOC_ENG_MSG_RELEASE_BIT:
-        {
-            loc_eng_msg_release_bit* brlMsg = (loc_eng_msg_release_bit*)msg;
-            AgpsStateMachine* stateMachine = (brlMsg->isSupl) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-            BITSubscriber subscriber(stateMachine, brlMsg->ipv4Addr, brlMsg->ipv6Addr);
-
-            stateMachine->unsubscribeRsrc((Subscriber*)&subscriber);
-        }
-        break;
-
-        case LOC_ENG_MSG_REQUEST_ATL:
-        {
-            loc_eng_msg_request_atl* arqMsg = (loc_eng_msg_request_atl*)msg;
-            AgpsStateMachine* stateMachine = (AGPS_TYPE_SUPL == arqMsg->type) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-            ATLSubscriber subscriber(arqMsg->handle,
-                                     stateMachine,
-                                     loc_eng_data_p->client_handle);
-
-            stateMachine->subscribeRsrc((Subscriber*)&subscriber);
-        }
-        break;
-
-        case LOC_ENG_MSG_RELEASE_ATL:
-        {
-            loc_eng_msg_release_atl* arlMsg = (loc_eng_msg_release_atl*)msg;
-            ATLSubscriber s1(arlMsg->handle,
-                             loc_eng_data_p->agnss_nif,
-                             loc_eng_data_p->client_handle);
-            // attempt to unsubscribe from agnss_nif first
-            if (! loc_eng_data_p->agnss_nif->unsubscribeRsrc((Subscriber*)&s1)) {
-                ATLSubscriber s2(arlMsg->handle,
-                                 loc_eng_data_p->internet_nif,
-                                 loc_eng_data_p->client_handle);
-                // if unsuccessful, try internet_nif
-                loc_eng_data_p->internet_nif->unsubscribeRsrc((Subscriber*)&s2);
-            }
-        }
-        break;
-
-        case LOC_ENG_MSG_REQUEST_XTRA_DATA:
-            if (loc_eng_data_p->xtra_module_data.download_request_cb != NULL)
-            {
-                loc_eng_data_p->xtra_module_data.download_request_cb();
-            }
-            break;
-
-        case LOC_ENG_MSG_REQUEST_TIME:
-            break;
-
-        case LOC_ENG_MSG_REQUEST_POSITION:
-            break;
-
-        case LOC_ENG_MSG_DELETE_AIDING_DATA:
-            loc_eng_data_p->aiding_data_for_deletion |= ((loc_eng_msg_delete_aiding_data*)msg)->type;
-            break;
-
-        case LOC_ENG_MSG_ENABLE_DATA:
-        {
-            loc_eng_msg_set_data_enable *unaMsg = (loc_eng_msg_set_data_enable*)msg;
-            loc_eng_data_p->client_handle->enableData(unaMsg->enable);
-            loc_eng_data_p->client_handle->setAPN(unaMsg->apn, unaMsg->length);
-        }
-        break;
-
-        case LOC_ENG_MSG_INJECT_XTRA_DATA:
-        {
-            loc_eng_msg_inject_xtra_data *xdMsg = (loc_eng_msg_inject_xtra_data*)msg;
-            loc_eng_data_p->client_handle->setXtraData(xdMsg->data, xdMsg->length);
-        }
-        break;
-
-        case LOC_ENG_MSG_ATL_OPEN_SUCCESS:
-        {
-            loc_eng_msg_atl_open_success *aosMsg = (loc_eng_msg_atl_open_success*)msg;
-#ifdef QCOM_FEATURE_IPV6
-            AgpsStateMachine* stateMachine = (AGPS_TYPE_SUPL == aosMsg->agpsType) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-
-            stateMachine->setBearer(aosMsg->bearerType);
-#else
-            AgpsStateMachine* stateMachine = loc_eng_data_p->agnss_nif;
-#endif
-            stateMachine->setAPN(aosMsg->apn, aosMsg->length);
-            stateMachine->onRsrcEvent(RSRC_GRANTED);
-        }
-        break;
-
-        case LOC_ENG_MSG_ATL_CLOSED:
-        {
-            loc_eng_msg_atl_closed *acsMsg = (loc_eng_msg_atl_closed*)msg;
-#ifdef QCOM_FEATURE_IPV6
-            AgpsStateMachine* stateMachine = (AGPS_TYPE_SUPL == acsMsg->agpsType) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-#else
-            AgpsStateMachine* stateMachine = loc_eng_data_p->agnss_nif;
-#endif
-
-            stateMachine->onRsrcEvent(RSRC_RELEASED);
-        }
-        break;
-
-        case LOC_ENG_MSG_ATL_OPEN_FAILED:
-        {
-            loc_eng_msg_atl_open_failed *aofMsg = (loc_eng_msg_atl_open_failed*)msg;
-#ifdef QCOM_FEATURE_IPV6
-            AgpsStateMachine* stateMachine = (AGPS_TYPE_SUPL == aofMsg->agpsType) ?
-                                             loc_eng_data_p->agnss_nif :
-                                             loc_eng_data_p->internet_nif;
-#else
-            AgpsStateMachine* stateMachine = loc_eng_data_p->agnss_nif;
-#endif
-
-            stateMachine->onRsrcEvent(RSRC_DENIED);
-        }
-        break;
-
-        case LOC_ENG_MSG_ENGINE_DOWN:
-            loc_eng_handle_engine_down(*loc_eng_data_p);
-            break;
-
-        case LOC_ENG_MSG_ENGINE_UP:
-            loc_eng_handle_engine_up(*loc_eng_data_p);
-            break;
-
-        default:
-            LOC_LOGE("unsupported msgid = %d\n", msg->msgid);
-            break;
-        }
-
-        if ( (msg->msgid == LOC_ENG_MSG_ATL_OPEN_FAILED)  |
-             (msg->msgid == LOC_ENG_MSG_ATL_CLOSED)  |
-             (msg->msgid == LOC_ENG_MSG_ATL_OPEN_SUCCESS) )
-        {
-            loc_eng_data_p->agps_request_pending = false;
-            if (loc_eng_data_p->stop_request_pending) {
-                loc_eng_stop_handler(*loc_eng_data_p);
-                loc_eng_data_p->stop_request_pending = false;
-            }
-        }
-        loc_eng_data_p->stop_request_pending = false;
-
-        if (loc_eng_data_p->engine_status != GPS_STATUS_ENGINE_ON &&
-            loc_eng_data_p->aiding_data_for_deletion != 0)
-        {
-            loc_eng_data_p->client_handle->deleteAidingData(loc_eng_data_p->aiding_data_for_deletion);
-            loc_eng_data_p->aiding_data_for_deletion = 0;
-        }
-
-        delete msg;
-    }
-
-    EXIT_LOG(%s, VOID_RET);
+    return 0;
 }
+#endif /* USE_GLIB */
 
 /*===========================================================================
-FUNCTION loc_eng_report_position_ulp
+FUNCTION    loc_eng_read_config
 
 DESCRIPTION
-   Report a ULP position
-         p_ulp_pos_absolute, ULP position in absolute coordinates
+   Initiates the reading of the gps config file stored in /etc dir
 
 DEPENDENCIES
    None
 
 RETURN VALUE
-   0: SUCCESS
-   others: error
+   0: success
 
 SIDE EFFECTS
    N/A
 
 ===========================================================================*/
-static int loc_eng_report_position_ulp (void* handle,
-                                        const GpsLocation* location_report_ptr,
-                                        unsigned int   ext_data_length,
-                                        unsigned char* ext_data)
+int loc_eng_read_config(void)
 {
-    ENTRY_LOG();
-    loc_eng_data_s_type* loc_eng_data_p = (loc_eng_data_s_type*)handle;
-
-    INIT_CHECK(loc_eng_data_p->context && loc_eng_data_p->client_handle,
-               return -1);
-
-    if (ext_data_length > sizeof (extra_data))
+    ENTRY_LOG_CALLFLOW();
+    if(configAlreadyRead == false)
     {
-        ext_data_length = sizeof (extra_data);
+      // Initialize our defaults before reading of configuration file overwrites them.
+      loc_default_parameters();
+      // We only want to parse the conf file once. This is a good place to ensure that.
+      // In fact one day the conf file should go into context.
+      UTIL_READ_CONF(GPS_CONF_FILE, loc_parameter_table);
+      UTIL_READ_CONF(SAP_CONF_FILE, loc_parameter_table);
+      configAlreadyRead = true;
+    } else {
+      LOC_LOGV("GPS Config file has already been read\n");
     }
-
-    memcpy(extra_data,
-           ext_data,
-           ext_data_length);
-
-    loc_eng_data_p->client_handle->reportPosition((GpsLocation&)*location_report_ptr,
-                                                  NULL, LOC_SESS_SUCCESS);
 
     EXIT_LOG(%d, 0);
     return 0;
 }
-
-#ifdef QCOM_FEATURE_ULP
-/*===========================================================================
-FUNCTION loc_eng_ulp_init
-
-DESCRIPTION
-   This function dynamically loads the libulp.so and calls
-   its init function to start up the ulp module
-
-DEPENDENCIES
-   None
-
-RETURN VALUE
-   0: no error
-   -1: errors
-
-SIDE EFFECTS
-   N/A
-
-===========================================================================*/
-static int loc_eng_ulp_init(void* owner)
-{
-    ENTRY_LOG();
-    int ret_val;
-    void *handle;
-    const char *error;
-    get_ulp_interface* get_ulp_inf;
-
-    if (!(gps_conf.CAPABILITIES & ULP_CAPABILITY)) {
-       LOC_LOGD ("%s, ULP is not supported\n", __func__);
-       ret_val = -1;
-       goto exit;
-    }
-
-    handle = dlopen ("libulp.so", RTLD_NOW);
-    if (!handle)
-    {
-        LOC_LOGE ("%s, dlopen for libulp.so failed\n", __func__);
-        ret_val = -1;
-        goto exit;
-    }
-    dlerror();    /* Clear any existing error */
-
-    get_ulp_inf = (get_ulp_interface*) dlsym(handle, "ulp_get_interface");
-    if ((error = dlerror()) != NULL)  {
-        LOC_LOGE ("%s, dlsym for ulpInterface failed, error = %s\n", __func__, error);
-        ret_val = -1;
-        goto exit;
-    }
-
-    locEngUlpInf = get_ulp_inf();
-
-    // Initialize the ULP interface
-    locEngUlpInf->init (owner, loc_eng_report_position_ulp);
-
-    ret_val = 0;
-exit:
-    EXIT_LOG(%d, ret_val);
-    return ret_val;
-}
-
-/*===========================================================================
-FUNCTION    loc_eng_inject_raw_command
-
-DESCRIPTION
-   This is used to send special test modem commands from the applications
-   down into the HAL
-DEPENDENCIES
-   N/A
-
-RETURN VALUE
-   0: success
-
-SIDE EFFECTS
-   N/A
-
-===========================================================================*/
-bool loc_eng_inject_raw_command(loc_eng_data_s_type &loc_eng_data,
-                                char* command, int length)
-{
-    ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
-    boolean ret_val;
-    LOC_LOGD("loc_eng_send_extra_command: %s\n", command);
-    ret_val = TRUE;
-
-    EXIT_LOG(%s, loc_logger_boolStr[ret_val!=0]);
-    return ret_val;
-}
-/*===========================================================================
-FUNCTION    loc_eng_update_criteria
-
-DESCRIPTION
-   This is used to inform the ULP module of new unique criteria that are passed
-   in by the applications
-DEPENDENCIES
-   N/A
-
-RETURN VALUE
-   0: success
-
-SIDE EFFECTS
-   N/A
-
-===========================================================================*/
-int loc_eng_update_criteria(loc_eng_data_s_type &loc_eng_data,
-                            UlpLocationCriteria criteria)
-{
-    ENTRY_LOG_CALLFLOW();
-    INIT_CHECK(loc_eng_data.context, return -1);
-    int ret_val;
-    ret_val = 0;
-
-    EXIT_LOG(%d, ret_val);
-    return ret_val;
-}
-#endif

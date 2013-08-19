@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -37,25 +37,9 @@ extern "C" {
 #include <ctype.h>
 #include <cutils/properties.h>
 #include <hardware/gps.h>
+#include <gps_extended.h>
 
-typedef enum loc_server_type {
-    LOC_AGPS_CDMA_PDE_SERVER,
-    LOC_AGPS_CUSTOM_PDE_SERVER,
-    LOC_AGPS_MPC_SERVER,
-    LOC_AGPS_SUPL_SERVER
-} LocServerType;
-
-typedef enum loc_position_mode_type {
-    LOC_POSITION_MODE_STANDALONE,
-    LOC_POSITION_MODE_MS_BASED,
-    LOC_POSITION_MODE_MS_ASSISTED,
-    LOC_POSITION_MODE_RESERVED_1,
-    LOC_POSITION_MODE_RESERVED_2,
-    LOC_POSITION_MODE_RESERVED_3,
-    LOC_POSITION_MODE_RESERVED_4
-} LocPositionMode;
-
-typedef void (*loc_location_cb_ext) (GpsLocation* location, void* locExt);
+typedef void (*loc_location_cb_ext) (UlpLocation* location, void* locExt);
 typedef void (*loc_sv_status_cb_ext) (GpsSvStatus* sv_status, void* svExt);
 typedef void* (*loc_ext_parser)(void* data);
 
@@ -70,14 +54,8 @@ typedef struct {
     gps_create_thread create_thread_cb;
     loc_ext_parser location_ext_parser;
     loc_ext_parser sv_ext_parser;
+    gps_request_utc_time request_utc_time_cb;
 } LocCallbacks;
-
-enum loc_sess_status {
-    LOC_SESS_SUCCESS,
-    LOC_SESS_INTERMEDIATE,
-    LOC_SESS_FAILURE
-};
-
 
 #ifdef __cplusplus
 }

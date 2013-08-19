@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation, nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -30,7 +30,7 @@
 
 #define LOG_TAG "LocSvc_utils_q"
 #include "log_util.h"
-
+#include "platform_lib_includes.h"
 #include "linked_list.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,6 +134,20 @@ msq_q_err_type msg_q_init(void** msg_q_data)
    *msg_q_data = tmp_msg_q;
 
    return eMSG_Q_SUCCESS;
+}
+
+/*===========================================================================
+
+  FUNCTION:   msg_q_init2
+
+  ===========================================================================*/
+const void* msg_q_init2()
+{
+  void* q = NULL;
+  if (eMSG_Q_SUCCESS != msg_q_init(&q)) {
+    q = NULL;
+  }
+  return q;
 }
 
 /*===========================================================================
@@ -249,7 +263,7 @@ msq_q_err_type msg_q_rcv(void* msg_q_data, void** msg_obj)
 
    pthread_mutex_unlock(&p_msg_q->list_mutex);
 
-   LOC_LOGD("%s: Received message %p rv = %d\n", __FUNCTION__, *msg_obj, rv);
+   LOC_LOGD("%s: Received message 0x%08X rv = %d\n", __FUNCTION__, *msg_obj, rv);
 
    return rv;
 }

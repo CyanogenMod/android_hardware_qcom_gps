@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *     * Neither the name of The Linux Foundation nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -58,7 +58,7 @@ FUNCTION    msg_q_init
 DESCRIPTION
    Initializes internal structures for message queue.
 
-   msg_q_data: State of message queue to be initialized.
+   msg_q_data: pointer to an opaque Q handle to be returned; NULL if fails
 
 DEPENDENCIES
    N/A
@@ -71,6 +71,24 @@ SIDE EFFECTS
 
 ===========================================================================*/
 msq_q_err_type msg_q_init(void** msg_q_data);
+
+/*===========================================================================
+FUNCTION    msg_q_init2
+
+DESCRIPTION
+   Initializes internal structures for message queue.
+
+DEPENDENCIES
+   N/A
+
+RETURN VALUE
+   opaque handle to the Q created; NULL if create fails
+
+SIDE EFFECTS
+   N/A
+
+===========================================================================*/
+const void* msg_q_init2();
 
 /*===========================================================================
 FUNCTION    msg_q_destroy
