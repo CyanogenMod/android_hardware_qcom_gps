@@ -273,7 +273,7 @@ static int loc_eng_init(GpsCallbacks* callbacks)
    // Create threads (if not yet created)
    if (!loc_eng_inited)
    {
-      loc_eng_data.deferred_action_thread = NULL;
+      loc_eng_data.deferred_action_thread = 0;
       loc_eng_data.deferred_action_thread = callbacks->create_thread_cb("loc_api",loc_eng_deferred_action_thread, NULL);
 #ifdef FEATURE_GNSS_BIT_API
       gpsone_loc_api_server_launch(NULL, NULL);
@@ -367,7 +367,7 @@ static void loc_eng_cleanup()
 
       void* ignoredValue;
       pthread_join(loc_eng_data.deferred_action_thread, &ignoredValue);
-      loc_eng_data.deferred_action_thread = NULL;
+      loc_eng_data.deferred_action_thread = 0;
    }
 
    pthread_mutex_destroy (&loc_eng_data.xtra_module_data.lock);
@@ -1391,7 +1391,7 @@ SIDE EFFECTS
 static void loc_eng_process_loc_event (rpc_loc_event_mask_type loc_event,
         rpc_loc_event_payload_u_type* loc_event_payload)
 {
-   LOC_LOGD("loc_eng_process_loc_event: %x\n", loc_event);
+   LOC_LOGD("loc_eng_process_loc_event: %llu\n", loc_event);
    // Parsed report
    if ( (loc_event & RPC_LOC_EVENT_PARSED_POSITION_REPORT) &&
          loc_eng_data.mute_session_state != LOC_MUTE_SESS_IN_SESSION)
