@@ -91,7 +91,7 @@ static void loc_default_parameters()
    gps_conf.INTERMEDIATE_POS = 0;
    gps_conf.ACCURACY_THRES = 0;
    gps_conf.ENABLE_WIPER = 0;
-   gps_conf.DEBUG_LEVEL = 4; /* debug level */
+   gps_conf.DEBUG_LEVEL = 2; /* debug level */
 }
 
 /*===========================================================================
