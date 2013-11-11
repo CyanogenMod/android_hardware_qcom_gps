@@ -43,7 +43,7 @@ LOCAL_C_INCLUDES:= \
     $(TARGET_OUT_HEADERS)/librpc \
     $(TARGET_OUT_HEADERS)/libloc-rpc/rpc_inc \
     $(TARGET_OUT_HEADERS)/libloc_eng \
-    hardware/msm7k/librpc
+    hardware/qcom/gps/librpc
 
 LOCAL_COPY_HEADERS_TO:= libloc_api-rpc-qc/$(RPC_INC)
 LOCAL_COPY_HEADERS:= \
