@@ -91,9 +91,9 @@ static int  loc_agps_closed();
 static int  loc_agps_open_failed();
 static int  loc_agps_set_server(AGpsType type, const char *hostname, int port);
 
-static const AGpsInterface sLocEngAGpsInterface =
+static const AGpsInterface_v1 sLocEngAGpsInterface =
 {
-   sizeof(AGpsInterface),
+   sizeof(AGpsInterface_v1),
    loc_agps_init,
    loc_agps_open,
    loc_agps_closed,
