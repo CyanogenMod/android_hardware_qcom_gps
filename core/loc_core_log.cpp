@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -118,13 +118,20 @@ static loc_name_val_s_type loc_eng_aiding_data_bits[] =
     NAME_VAL( GPS_DELETE_CELLDB_INFO ),
     NAME_VAL( GPS_DELETE_ALMANAC_CORR ),
     NAME_VAL( GPS_DELETE_FREQ_BIAS_EST ),
-    NAME_VAL( GPS_DELETE_EPHEMERIS_GLO ),
-    NAME_VAL( GPS_DELETE_ALMANAC_GLO ),
-    NAME_VAL( GPS_DELETE_SVDIR_GLO ),
-    NAME_VAL( GPS_DELETE_SVSTEER_GLO ),
-    NAME_VAL( GPS_DELETE_ALMANAC_CORR_GLO ),
+    NAME_VAL( GLO_DELETE_EPHEMERIS ),
+    NAME_VAL( GLO_DELETE_ALMANAC ),
+    NAME_VAL( GLO_DELETE_SVDIR ),
+    NAME_VAL( GLO_DELETE_SVSTEER ),
+    NAME_VAL( GLO_DELETE_ALMANAC_CORR ),
     NAME_VAL( GPS_DELETE_TIME_GPS ),
-    NAME_VAL( GPS_DELETE_TIME_GLO )
+    NAME_VAL( GLO_DELETE_TIME ),
+    NAME_VAL( BDS_DELETE_SVDIR ),
+    NAME_VAL( BDS_DELETE_SVSTEER ),
+    NAME_VAL( BDS_DELETE_TIME ),
+    NAME_VAL( BDS_DELETE_ALMANAC_CORR ),
+    NAME_VAL( BDS_DELETE_EPHEMERIS ),
+    NAME_VAL( BDS_DELETE_ALMANAC ),
+    NAME_VAL( GPS_DELETE_ALL)
 };
 static int loc_eng_aiding_data_bit_num = sizeof(loc_eng_aiding_data_bits) / sizeof(loc_name_val_s_type);
 
@@ -154,7 +161,8 @@ static loc_name_val_s_type loc_eng_ni_types[] =
 {
     NAME_VAL( GPS_NI_TYPE_VOICE ),
     NAME_VAL( GPS_NI_TYPE_UMTS_SUPL ),
-    NAME_VAL( GPS_NI_TYPE_UMTS_CTRL_PLANE )
+    NAME_VAL( GPS_NI_TYPE_UMTS_CTRL_PLANE ),
+    NAME_VAL( GPS_NI_TYPE_EMERGENCY_SUPL )
 };
 static int loc_eng_ni_type_num = sizeof(loc_eng_ni_types) / sizeof(loc_name_val_s_type);
 
@@ -197,7 +205,7 @@ static loc_name_val_s_type loc_eng_agps_bears[] =
 {
     NAME_VAL( AGPS_APN_BEARER_INVALID ),
     NAME_VAL( AGPS_APN_BEARER_IPV4 ),
-    NAME_VAL( AGPS_APN_BEARER_IPV4 ),
+    NAME_VAL( AGPS_APN_BEARER_IPV6 ),
     NAME_VAL( AGPS_APN_BEARER_IPV4V6 )
 };
 static int loc_eng_agps_bears_num = sizeof(loc_eng_agps_bears) / sizeof(loc_name_val_s_type);

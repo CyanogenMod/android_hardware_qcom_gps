@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,8 +33,10 @@
 #include <ctype.h>
 #include <gps_extended.h>
 #include <MsgTask.h>
+#include <log_util.h>
 
 namespace loc_core {
+class ContextBase;
 
 int hexcode(char *hexstring, int string_size,
             const char *data, int data_size);
@@ -51,16 +53,25 @@ int decodeAddress(char *addr_string, int string_size,
 #define TO_1ST_HANDLING_ADAPTER(adapters, call)                              \
     for (int i = 0; i <MAX_ADAPTERS && NULL != (adapters)[i] && !(call); i++);
 
-
 class LocAdapterBase;
 struct LocSsrMsg;
+struct LocOpenMsg;
+
+class LocApiProxyBase {
+public:
+    inline LocApiProxyBase() {}
+    inline virtual ~LocApiProxyBase() {}
+    inline virtual void* getSibling2() { return NULL; }
+};
 
 class LocApiBase {
     friend struct LocSsrMsg;
+    //LocOpenMsg calls open() which makes it necessary to declare
+    //it as a friend
+    friend struct LocOpenMsg;
     friend class ContextBase;
-    const LOC_API_ADAPTER_EVENT_MASK_T mExcludedMask;
     const MsgTask* mMsgTask;
-
+    ContextBase *mContext;
     LocAdapterBase* mLocAdapters[MAX_ADAPTERS];
 
 protected:
@@ -68,16 +79,19 @@ protected:
         open(LOC_API_ADAPTER_EVENT_MASK_T mask);
     virtual enum loc_api_adapter_err
         close();
-
     LOC_API_ADAPTER_EVENT_MASK_T getEvtMask();
     LOC_API_ADAPTER_EVENT_MASK_T mMask;
     LocApiBase(const MsgTask* msgTask,
-               LOC_API_ADAPTER_EVENT_MASK_T excludedMask);
+               LOC_API_ADAPTER_EVENT_MASK_T excludedMask,
+               ContextBase* context = NULL);
     inline virtual ~LocApiBase() { close(); }
     bool isInSession();
+    const LOC_API_ADAPTER_EVENT_MASK_T mExcludedMask;
 
 public:
-    inline virtual void* getSibling() { return NULL; }
+    inline void sendMsg(const LocMsg* msg) const {
+        mMsgTask->sendMsg(msg);
+    }
 
     void addAdapter(LocAdapterBase* adapter);
     void removeAdapter(LocAdapterBase* adapter);
@@ -111,6 +125,9 @@ public:
     // downward calls
     // All below functions are to be defined by adapter specific modules:
     // RPC, QMI, etc.  The default implementation is empty.
+
+    virtual void* getSibling();
+    virtual LocApiProxyBase* getLocApiProxy();
     virtual enum loc_api_adapter_err
         startFix(const LocPosMode& posMode);
     virtual enum loc_api_adapter_err
@@ -147,7 +164,7 @@ public:
     virtual enum loc_api_adapter_err
         setLPPConfig(uint32_t profile);
     virtual enum loc_api_adapter_err
-        setSensorControlConfig(int sensorUsage);
+        setSensorControlConfig(int sensorUsage, int sensorProvider);
     virtual enum loc_api_adapter_err
         setSensorProperties(bool gyroBiasVarianceRandomWalk_valid,
                             float gyroBiasVarianceRandomWalk,
@@ -174,16 +191,37 @@ public:
         setExtPowerConfig(int isBatteryCharging);
     virtual enum loc_api_adapter_err
         setAGLONASSProtocol(unsigned long aGlonassProtocol);
+    virtual enum loc_api_adapter_err
+        getWwanZppFix(GpsLocation & zppLoc);
+    virtual enum loc_api_adapter_err
+        getBestAvailableZppFix(GpsLocation & zppLoc);
+    virtual enum loc_api_adapter_err
+        getBestAvailableZppFix(GpsLocation & zppLoc, LocPosTechMask & tech_mask);
     virtual int initDataServiceClient();
     virtual int openAndStartDataCall();
     virtual void stopDataCall();
     virtual void closeDataCall();
 
     inline virtual void setInSession(bool inSession) {}
+
+    /*Values for lock
+      1 = Do not lock any position sessions
+      2 = Lock MI position sessions
+      3 = Lock MT position sessions
+      4 = Lock all position sessions
+     */
+    virtual int setGpsLock(unsigned int lock);
+    /*
+      Returns
+      Current value of GPS Lock on success
+      -1 on failure
+     */
+    virtual int getGpsLock(void);
 };
 
 typedef LocApiBase* (getLocApi_t)(const MsgTask* msgTask,
-                                  LOC_API_ADAPTER_EVENT_MASK_T exMask);
+                                  LOC_API_ADAPTER_EVENT_MASK_T exMask,
+                                  ContextBase *context);
 
 } // namespace loc_core
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,21 +35,22 @@
 
 namespace loc_core {
 
+class LocAdapterProxyBase;
+
 class LocAdapterBase {
 protected:
     const LOC_API_ADAPTER_EVENT_MASK_T mEvtMask;
     ContextBase* mContext;
     LocApiBase* mLocApi;
+    LocAdapterProxyBase* mLocAdapterProxyBase;
     const MsgTask* mMsgTask;
 
     inline LocAdapterBase(const MsgTask* msgTask) :
-        mEvtMask(0), mContext(NULL), mLocApi(NULL), mMsgTask(msgTask) {}
-
-    LocAdapterBase(const LOC_API_ADAPTER_EVENT_MASK_T mask,
-                   ContextBase* context);
-    inline virtual ~LocAdapterBase() { mLocApi->removeAdapter(this); }
-
+        mEvtMask(0), mContext(NULL), mLocApi(NULL), mLocAdapterProxyBase(NULL), mMsgTask(msgTask) {}
 public:
+    inline virtual ~LocAdapterBase() { mLocApi->removeAdapter(this); }
+    LocAdapterBase(const LOC_API_ADAPTER_EVENT_MASK_T mask,
+                   ContextBase* context, LocAdapterProxyBase *adapterProxyBase = NULL);
     inline LOC_API_ADAPTER_EVENT_MASK_T
         checkMask(LOC_API_ADAPTER_EVENT_MASK_T mask) const {
         return mEvtMask & mask;
@@ -70,11 +71,12 @@ public:
     // This will be overridden by the individual adapters
     // if necessary.
     inline virtual void setUlpProxy(UlpProxyBase* ulp) {}
-    inline virtual void handleEngineUpEvent() {}
+    virtual void handleEngineUpEvent();
     virtual void handleEngineDownEvent();
     inline virtual void setPositionModeInt(LocPosMode& posMode) {}
     virtual void startFixInt() {}
     virtual void stopFixInt() {}
+    virtual void getZppInt() {}
     virtual void reportPosition(UlpLocation &location,
                                 GpsLocationExtended &locationExtended,
                                 void* locationExt,
@@ -98,6 +100,8 @@ public:
     virtual bool requestNiNotify(GpsNiNotification &notify,
                                  const void* data);
     inline virtual bool isInSession() { return false; }
+    virtual void shutdown();
+    ContextBase* getContext() const { return mContext; }
 };
 
 } // namespace loc_core

@@ -1,3 +1,7 @@
+ifeq (, $(filter aarch64 arm64, $(TARGET_ARCH)))
+ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
+ifneq ($(BUILD_TINY_ANDROID),true)
+
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -35,12 +39,17 @@ LOCAL_COPY_HEADERS:= \
     LocAdapterBase.h \
     ContextBase.h \
     LocDualContext.h \
-    IzatProxyBase.h \
+    LBSProxyBase.h \
     UlpProxyBase.h \
     gps_extended_c.h \
     gps_extended.h \
-    loc_core_log.h
+    loc_core_log.h \
+    LocAdapterProxyBase.h
 
 LOCAL_PRELINK_MODULE := false
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif # not BUILD_TINY_ANDROID
+endif # BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
+endif # not aarch64
