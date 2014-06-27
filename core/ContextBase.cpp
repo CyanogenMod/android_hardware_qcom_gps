@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -40,21 +40,22 @@
 
 namespace loc_core {
 
-
-IzatProxyBase* ContextBase::getIzatProxy(const char* libName)
+LBSProxyBase* ContextBase::getLBSProxy(const char* libName)
 {
-    IzatProxyBase* proxy = NULL;
+    LBSProxyBase* proxy = NULL;
+    LOC_LOGD("%s:%d]: getLBSProxy libname: %s\n", __func__, __LINE__, libName);
     void* lib = dlopen(libName, RTLD_NOW);
 
     if ((void*)NULL != lib) {
-        getIzatProxy_t* getter = (getIzatProxy_t*)dlsym(lib, "getIzatProxy");
+        getLBSProxy_t* getter = (getLBSProxy_t*)dlsym(lib, "getLBSProxy");
         if (NULL != getter) {
             proxy = (*getter)();
         }
     }
     if (NULL == proxy) {
-        proxy = new IzatProxyBase();
+        proxy = new LBSProxyBase();
     }
+    LOC_LOGD("%s:%d]: Exiting\n", __func__, __LINE__);
     return proxy;
 }
 
@@ -94,7 +95,7 @@ LocApiBase* ContextBase::createLocApi(LOC_API_ADAPTER_EVENT_MASK_T exMask)
     // locApi could still be NULL at this time
     // we would then create a dummy one
     if (NULL == locApi) {
-        locApi = new LocApiBase(mMsgTask, exMask);
+        locApi = new LocApiBase(mMsgTask, exMask, this);
     }
 
     return locApi;
@@ -103,9 +104,10 @@ LocApiBase* ContextBase::createLocApi(LOC_API_ADAPTER_EVENT_MASK_T exMask)
 ContextBase::ContextBase(const MsgTask* msgTask,
                          LOC_API_ADAPTER_EVENT_MASK_T exMask,
                          const char* libName) :
-    mIzatProxy(getIzatProxy(libName)),
+    mLBSProxy(getLBSProxy(libName)),
     mMsgTask(msgTask),
-    mLocApi(createLocApi(exMask))
+    mLocApi(createLocApi(exMask)),
+    mLocApiProxy(mLocApi->getLocApiProxy())
 {
 }
 

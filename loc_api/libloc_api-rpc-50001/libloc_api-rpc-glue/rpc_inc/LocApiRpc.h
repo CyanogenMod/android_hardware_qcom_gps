@@ -1,4 +1,4 @@
-/* Copyright (c) 2011,2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011,2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -115,11 +115,25 @@ public:
         atlCloseStatus(int handle, int is_succ);
     virtual enum loc_api_adapter_err
         setSUPLVersion(uint32_t version);
-
     virtual void setInSession(bool inSession);
+
+    /*Values for lock
+      1 = Do not lock any position sessions
+      2 = Lock MI position sessions
+      3 = Lock MT position sessions
+      4 = Lock all position sessions
+    */
+    virtual int setGpsLock(unsigned int lock);
+    /*
+     Returns
+     Current value of GPS Lock on success
+     -1 on failure
+     */
+    virtual int getGpsLock(void);
 };
 
 extern "C" LocApiBase* getLocApi(const MsgTask* msgTask,
-                                 LOC_API_ADAPTER_EVENT_MASK_T exMask);
+                                 LOC_API_ADAPTER_EVENT_MASK_T exMask,
+                                 ContextBase *context);
 
 #endif //LOC_API_RPC_H

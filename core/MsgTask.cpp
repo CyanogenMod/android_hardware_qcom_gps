@@ -35,6 +35,7 @@
 #include <msg_q.h>
 #include <log_util.h>
 #include <loc_log.h>
+#include <android_runtime/AndroidRuntime.h>
 
 namespace loc_core {
 
@@ -66,6 +67,21 @@ MsgTask::MsgTask(const void* q, tAssociate associator) :
 
 MsgTask::~MsgTask() {
     msg_q_unblock((void*)mQ);
+}
+
+void MsgTask::associate(tAssociate tAssociator) const {
+    struct LocAssociateMsg : public LocMsg {
+        tAssociate mAssociator;
+        inline LocAssociateMsg(tAssociate associator) :
+            LocMsg(), mAssociator(associator) {}
+        inline virtual void proc() const {
+            if (mAssociator) {
+                LOC_LOGD("MsgTask::associate");
+                mAssociator();
+            }
+        }
+    };
+    sendMsg(new LocAssociateMsg(tAssociator));
 }
 
 void MsgTask::createPThread(const char* threadName) {

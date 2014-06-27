@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -34,6 +34,8 @@
 #define TARGET_APQ_SA        TARGET_SET(GNSS_GSS, NO_SSC)
 #define TARGET_MPQ           TARGET_SET(GNSS_NONE,NO_SSC)
 #define TARGET_MSM_NO_SSC    TARGET_SET(GNSS_MSM, NO_SSC)
+#define TARGET_QCA1530       TARGET_SET(GNSS_QCA1530, NO_SSC)
+#define TARGET_UNKNOWN       TARGET_SET(GNSS_UNKNOWN, NO_SSC)
 #define getTargetGnssType(target)  (target>>1)
 
 #ifdef __cplusplus
@@ -41,14 +43,23 @@ extern "C"
 {
 #endif
 
-unsigned int get_target(void);
+unsigned int loc_get_target(void);
 
+/*The character array passed to this function should have length
+  of atleast PROPERTY_VALUE_MAX*/
+void loc_get_target_baseband(char *baseband, int array_length);
+/*The character array passed to this function should have length
+  of atleast PROPERTY_VALUE_MAX*/
+void loc_get_platform_name(char *platform_name, int array_length);
+
+/* Please remember to update 'target_name' in loc_log.cpp,
+   if do any changes to this enum. */
 typedef enum {
     GNSS_NONE = 0,
     GNSS_MSM,
     GNSS_GSS,
     GNSS_MDM,
-    GNSS_GRIFFON,
+    GNSS_QCA1530,
     GNSS_UNKNOWN
 }GNSS_TARGET;
 
