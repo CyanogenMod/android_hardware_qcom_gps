@@ -1,6 +1,3 @@
-ifeq (, $(filter aarch64 arm64, $(TARGET_ARCH)))
-ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
-ifneq ($(BUILD_TINY_ANDROID),true)
 #Compile this library only for builds with the latest modem image
 
 LOCAL_PATH := $(call my-dir)
@@ -20,16 +17,12 @@ LOCAL_SRC_FILES += \
     linked_list.c \
     loc_target.cpp \
     loc_timer.c \
-    ../platform_lib_abstractions/elapsed_millis_since_boot.cpp \
-    loc_misc_utils.cpp
+    ../platform_lib_abstractions/elapsed_millis_since_boot.cpp
+
 
 LOCAL_CFLAGS += \
      -fno-short-enums \
      -D_ANDROID_
-
-ifeq ($(TARGET_BUILD_VARIANT),user)
-   LOCAL_CFLAGS += -DTARGET_BUILD_VARIANT_USER
-endif
 
 LOCAL_LDFLAGS += -Wl,--export-dynamic
 
@@ -48,8 +41,8 @@ LOCAL_COPY_HEADERS:= \
    loc_timer.h \
    ../platform_lib_abstractions/platform_lib_includes.h \
    ../platform_lib_abstractions/platform_lib_time.h \
-   ../platform_lib_abstractions/platform_lib_macros.h \
-   loc_misc_utils.h
+   ../platform_lib_abstractions/platform_lib_macros.h
+
 
 LOCAL_MODULE := libgps.utils
 
@@ -59,6 +52,3 @@ LOCAL_PRELINK_MODULE := false
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)
 include $(BUILD_SHARED_LIBRARY)
-endif # not BUILD_TINY_ANDROID
-endif # BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
-endif # not aarch64

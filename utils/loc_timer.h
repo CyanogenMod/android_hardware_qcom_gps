@@ -43,19 +43,10 @@ extern "C" {
 */
 typedef void(*loc_timer_callback)(void *user_data, int result);
 
-
-/*
-  Returns the handle, which can be used to stop the timer
-*/
-void* loc_timer_start(unsigned int delay_msec,
-                      loc_timer_callback,
-                      void* user_data);
-
-/*
-  handle becomes invalid upon the return of the callback
-*/
-void loc_timer_stop(void* handle);
-
+//int loc_timer_start(loc_timer_client_data *p_thread);
+int loc_timer_start(unsigned int delay_msec,
+                    loc_timer_callback,
+                    void* user_data);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

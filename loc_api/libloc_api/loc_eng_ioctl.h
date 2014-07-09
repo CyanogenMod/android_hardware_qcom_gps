@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009,2011 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -26,39 +26,44 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#ifndef LOC_TARGET_H
-#define LOC_TARGET_H
-#define TARGET_SET(gnss,ssc) ( (gnss<<1)|ssc )
-#define TARGET_DEFAULT       TARGET_SET(GNSS_MSM, HAS_SSC)
-#define TARGET_MDM           TARGET_SET(GNSS_MDM, HAS_SSC)
-#define TARGET_APQ_SA        TARGET_SET(GNSS_GSS, NO_SSC)
-#define TARGET_MPQ           TARGET_SET(GNSS_NONE,NO_SSC)
-#define TARGET_MSM_NO_SSC    TARGET_SET(GNSS_MSM, NO_SSC)
-#define getTargetGnssType(target)  (target>>1)
 
-#ifdef __cplusplus
-extern "C"
+#ifndef LOC_ENG_IOCTL_H
+#define LOC_ENG_IOCTL_H
+
+// Module data
+typedef struct loc_eng_ioctl_data_s_type
 {
-#endif
+    // We are waiting for an ioctl callback
+    boolean                       cb_is_selected;
+    // The thread has been put in a wait state for an ioctl callback
+    boolean                       cb_is_waiting;
+    // Loc client handle that is waiting for the callback
+    rpc_loc_client_handle_type    client_handle;
+    // IOCTL type that the loc client is waiting for
+    rpc_loc_ioctl_e_type          ioctl_type;
+    // The IOCLT report has arrived for the waiting client
+    boolean                       cb_has_arrived;
+    // The payload for the RPC_LOC_EVENT_IOCTL_REPORT
+    rpc_loc_ioctl_callback_s_type cb_payload;
+    // Mutex to access this data structure
+    pthread_mutex_t               cb_data_mutex;
+    // LOC ioctl callback arrived mutex
+    pthread_cond_t                cb_arrived_cond;
+} loc_eng_ioctl_data_s_type;
 
-unsigned int get_target(void);
 
-typedef enum {
-    GNSS_NONE = 0,
-    GNSS_MSM,
-    GNSS_GSS,
-    GNSS_MDM,
-    GNSS_GRIFFON,
-    GNSS_UNKNOWN
-}GNSS_TARGET;
+extern boolean loc_eng_ioctl
+(
+    rpc_loc_client_handle_type           handle,
+    rpc_loc_ioctl_e_type                 ioctl_type,
+    rpc_loc_ioctl_data_u_type*           ioctl_data_ptr,
+    uint32                               timeout_msec,
+    rpc_loc_ioctl_callback_s_type       *cb_data_ptr
+);
 
-typedef enum {
-    NO_SSC = 0,
-    HAS_SSC
-}SSC_TYPE;
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /*LOC_TARGET_H*/
+extern boolean loc_eng_ioctl_process_cb 
+(
+    rpc_loc_client_handle_type           client_handle,
+    const rpc_loc_ioctl_callback_s_type *cb_data_ptr
+);
+#endif // LOC_ENG_IOCTL_H

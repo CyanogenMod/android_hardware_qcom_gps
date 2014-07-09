@@ -112,7 +112,7 @@ loc_name_val_s_type target_name[] =
     NAME_VAL(GNSS_MSM),
     NAME_VAL(GNSS_GSS),
     NAME_VAL(GNSS_MDM),
-    NAME_VAL(GNSS_QCA1530),
+    NAME_VAL(GNSS_GRIFFON),
     NAME_VAL(GNSS_UNKNOWN)
 };
 
@@ -134,18 +134,18 @@ RETURN VALUE
 const char *loc_get_target_name(unsigned int target)
 {
     int index = 0;
-    static char ret[BUFFER_SIZE];
+    char ret[BUFFER_SIZE];
 
     index =  getTargetGnssType(target);
     if( index >= target_name_num || index < 0)
         index = target_name_num - 1;
 
     if( (target & HAS_SSC) == HAS_SSC ) {
-        snprintf(ret, sizeof(ret), " %s with SSC",
+        sprintf(ret, " %s with SSC",
            loc_get_name_from_val(target_name, target_name_num, (long)index) );
     }
     else {
-       snprintf(ret, sizeof(ret), " %s  without SSC",
+       sprintf(ret, " %s  without SSC",
            loc_get_name_from_val(target_name, target_name_num, (long)index) );
     }
     return ret;
@@ -200,12 +200,6 @@ SIDE EFFECTS
 void loc_logger_init(unsigned long debug, unsigned long timestamp)
 {
    loc_logger.DEBUG_LEVEL = debug;
-#ifdef TARGET_BUILD_VARIANT_USER
-   // force user builds to 2 or less
-   if (loc_logger.DEBUG_LEVEL > 2) {
-       loc_logger.DEBUG_LEVEL = 2;
-   }
-#endif
    loc_logger.TIMESTAMP   = timestamp;
 }
 

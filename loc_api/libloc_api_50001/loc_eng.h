@@ -133,7 +133,6 @@ typedef struct loc_eng_data_s
 
     loc_ext_parser location_ext_parser;
     loc_ext_parser sv_ext_parser;
-    loc_shutdown_cb shutdown_cb;
 } loc_eng_data_s_type;
 
 /* GPS.conf support */
@@ -141,8 +140,10 @@ typedef struct loc_gps_cfg_s
 {
     unsigned long  INTERMEDIATE_POS;
     unsigned long  ACCURACY_THRES;
+    unsigned long  ENABLE_WIPER;
     unsigned long  SUPL_VER;
     unsigned long  CAPABILITIES;
+    unsigned long  QUIPC_ENABLED;
     unsigned long  LPP_PROFILE;
     uint8_t        NMEA_PROVIDER;
     unsigned long  A_GLONASS_POS_PROTOCOL_SELECT;
@@ -171,7 +172,6 @@ typedef struct
     double         RATE_RANDOM_WALK_SPECTRAL_DENSITY;
     uint8_t        VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID;
     double         VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY;
-    unsigned long  SENSOR_PROVIDER;
 } loc_sap_cfg_s_type;
 
 extern loc_gps_cfg_s_type gps_conf;
@@ -179,8 +179,7 @@ extern loc_sap_cfg_s_type sap_conf;
 
 int  loc_eng_init(loc_eng_data_s_type &loc_eng_data,
                   LocCallbacks* callbacks,
-                  LOC_API_ADAPTER_EVENT_MASK_T event,
-                  ContextBase* context);
+                  LOC_API_ADAPTER_EVENT_MASK_T event);
 int  loc_eng_start(loc_eng_data_s_type &loc_eng_data);
 int  loc_eng_stop(loc_eng_data_s_type &loc_eng_data);
 void loc_eng_cleanup(loc_eng_data_s_type &loc_eng_data);

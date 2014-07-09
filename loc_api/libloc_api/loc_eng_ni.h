@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009,2011 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -9,7 +9,7 @@
  *       copyright notice, this list of conditions and the following
  *       disclaimer in the documentation and/or other materials provided
  *       with the distribution.
- *     * Neither the name of The Linux Foundation, nor the names of its
+ *     * Neither the name of The Linux Foundation nor the names of its
  *       contributors may be used to endorse or promote products derived
  *       from this software without specific prior written permission.
  *
@@ -26,38 +26,31 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#ifndef ULP_PROXY_BASE_H
-#define ULP_PROXY_BASE_H
 
-#include <gps_extended.h>
+#ifndef LOC_ENG_NI_H
+#define LOC_ENG_NI_H
 
-namespace loc_core {
+#include <hardware/gps.h>
 
-class LocAdapterBase;
+#define LOC_NI_NO_RESPONSE_TIME            20                      /* secs */
 
-class UlpProxyBase {
-public:
-    inline UlpProxyBase() {}
-    inline virtual ~UlpProxyBase() {}
-    inline virtual bool sendStartFix() { return false;}
-    inline virtual bool sendStopFix() { return false;}
-    inline virtual bool sendFixMode(LocPosMode &params) { return false;}
-    inline virtual bool reportPosition(UlpLocation &location,
-                                       GpsLocationExtended &locationExtended,
-                                       void* locationExt,
-                                       enum loc_sess_status status,
-                                       LocPosTechMask loc_technology_mask) {
-        return false;
-    }
-    inline virtual bool reportSv(GpsSvStatus &svStatus,
-                                 GpsLocationExtended &locationExtended,
-                                 void* svExt) {
-        return false;
-    }
-    inline virtual void setAdapter(LocAdapterBase* adapter) {}
-    inline virtual void setCapabilities(unsigned long capabilities) {}
-};
+extern const GpsNiInterface sLocEngNiInterface;
 
-} // namespace loc_core
+typedef struct {
+    pthread_mutex_t         loc_ni_lock;
+    int                     response_time_left;       /* examine time for NI response */
+    boolean                 notif_in_progress;        /* NI notification/verification in progress */
+    rpc_loc_ni_event_s_type loc_ni_request;
+    int                     current_notif_id;         /* ID to check against response */
+} loc_eng_ni_data_s_type;
 
-#endif // ULP_PROXY_BASE_H
+// Functions for sLocEngNiInterface
+extern void loc_eng_ni_init(GpsNiCallbacks *callbacks);
+extern void loc_eng_ni_respond(int notif_id, GpsUserResponseType user_response);
+
+extern int loc_eng_ni_callback (
+        rpc_loc_event_mask_type               loc_event,              /* event mask           */
+        const rpc_loc_event_payload_u_type*   loc_event_payload       /* payload              */
+);
+
+#endif /* LOC_ENG_NI_H */

@@ -52,7 +52,6 @@ public:
     MsgTask(tAssociate tAssociator, const char* threadName);
     ~MsgTask();
     void sendMsg(const LocMsg* msg) const;
-    void associate(tAssociate tAssociator) const;
 
 private:
     const void* mQ;

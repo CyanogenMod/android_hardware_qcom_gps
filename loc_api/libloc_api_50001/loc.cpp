@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -44,13 +44,7 @@
 #include <errno.h>
 #include <LocDualContext.h>
 #include <cutils/properties.h>
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-#include <mdm_detect.h>
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
+
 using namespace loc_core;
 
 //Globals defns
@@ -74,7 +68,7 @@ static int  loc_set_position_mode(GpsPositionMode mode, GpsPositionRecurrence re
                                   uint32_t min_interval, uint32_t preferred_accuracy,
                                   uint32_t preferred_time);
 static const void* loc_get_extension(const char* name);
-static void loc_close_mdm_node();
+
 // Defines the GpsInterface in gps.h
 static const GpsInterface sLocEngInterface =
 {
@@ -127,9 +121,6 @@ const GpsNiInterface sLocEngNiInterface =
    loc_ni_respond,
 };
 
-// For shutting down MDM in fusion devices
-static int mdm_fd = -1;
-
 static void loc_agps_ril_init( AGpsRilCallbacks* callbacks );
 static void loc_agps_ril_set_ref_location(const AGpsRefLocation *agps_reflocation, size_t sz_struct);
 static void loc_agps_ril_set_set_id(AGpsSetIDType type, const char* setid);
@@ -149,7 +140,7 @@ static const AGpsRilInterface sLocEngAGpsRilInterface =
 };
 
 static loc_eng_data_s_type loc_afw_data;
-static int gss_fd = -1;
+static int gss_fd = 0;
 
 /*===========================================================================
 FUNCTION    gps_get_hardware_interface
@@ -199,14 +190,10 @@ extern "C" const GpsInterface* get_gps_interface()
     unsigned int target = TARGET_DEFAULT;
     loc_eng_read_config();
 
-    target = loc_get_target();
+    target = get_target();
     LOC_LOGD("Target name check returned %s", loc_get_target_name(target));
-
-    int gnssType = getTargetGnssType(target);
-    switch (gnssType)
-    {
-    case GNSS_GSS:
         //APQ8064
+        if( getTargetGnssType(target) == GNSS_GSS ) {
         gps_conf.CAPABILITIES &= ~(GPS_CAPABILITY_MSA | GPS_CAPABILITY_MSB);
         gss_fd = open("/dev/gss", O_RDONLY);
         if (gss_fd < 0) {
@@ -216,16 +203,11 @@ extern "C" const GpsInterface* get_gps_interface()
             LOC_LOGD("GSS open success! CAPABILITIES %0lx\n",
                      gps_conf.CAPABILITIES);
         }
-        break;
-    case GNSS_NONE:
-        //MPQ8064
-        LOC_LOGE("No GPS HW on this target. Not returning interface.");
+    }
+    //MPQ8064
+        else if( getTargetGnssType(target) == GNSS_NONE) {
+        LOC_LOGE("No GPS HW on this target (MPQ8064). Not returning interface");
         return NULL;
-    case GNSS_QCA1530:
-        // qca1530 chip is present
-        gps_conf.CAPABILITIES &= ~(GPS_CAPABILITY_MSA | GPS_CAPABILITY_MSB);
-        LOC_LOGD("qca1530 present: CAPABILITIES %0lx\n", gps_conf.CAPABILITIES);
-        break;
     }
     return &sLocEngInterface;
 }
@@ -250,7 +232,6 @@ SIDE EFFECTS
 static int loc_init(GpsCallbacks* callbacks)
 {
     int retVal = -1;
-    int i = 0;
     ENTRY_LOG();
     LOC_API_ADAPTER_EVENT_MASK_T event;
 
@@ -279,90 +260,18 @@ static int loc_init(GpsCallbacks* callbacks)
                                     callbacks->create_thread_cb, /* create_thread_cb */
                                     NULL, /* location_ext_parser */
                                     NULL, /* sv_ext_parser */
-                                    callbacks->request_utc_time_cb, /* request_utc_time_cb */
-                                    loc_close_mdm_node  /*loc_shutdown_cb*/};
+                                    callbacks->request_utc_time_cb /* request_utc_time_cb */};
 
     gps_loc_cb = callbacks->location_cb;
     gps_sv_cb = callbacks->sv_status_cb;
 
-    retVal = loc_eng_init(loc_afw_data, &clientCallbacks, event, NULL);
+    retVal = loc_eng_init(loc_afw_data, &clientCallbacks, event);
     loc_afw_data.adapter->requestUlp(gps_conf.CAPABILITIES);
-    loc_afw_data.adapter->mSupportsAgpsRequests = !loc_afw_data.adapter->hasAgpsExtendedCapabilities();
-    loc_afw_data.adapter->mSupportsPositionInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
+    loc_afw_data.adapter->mAgpsEnabled = !loc_afw_data.adapter->hasAgpsExt();
 
-    if(retVal) {
-        LOC_LOGE("loc_eng_init() fail!");
-        goto err;
-    }
 
-    loc_afw_data.adapter->setPowerVoteRight(loc_get_target() == TARGET_QCA1530);
-    loc_afw_data.adapter->setPowerVote(true);
-
-    LOC_LOGD("loc_eng_init() success!");
-    if (mdm_fd < 0) {
-        struct dev_info modem_info;
-        memset(&modem_info, 0, sizeof(struct dev_info));
-        if(get_system_info(&modem_info) != RET_SUCCESS) {
-            LOC_LOGE("%s:%d]: Error: get_system_info returned error\n",
-                     __func__, __LINE__);
-            goto err;
-        }
-        for(i=0; i<modem_info.num_modems; i++) {
-            if((modem_info.mdm_list[i].type == MDM_TYPE_EXTERNAL) &&
-               (modem_info.mdm_list[i].powerup_node)) {
-                LOC_LOGD("%s:%d]: powerup_node: %s", __func__, __LINE__,
-                         modem_info.mdm_list[i].powerup_node);
-                mdm_fd = open(modem_info.mdm_list[i].powerup_node, O_RDONLY);
-                if (mdm_fd < 0) {
-                    LOC_LOGE("Error: %s open failed: %s\n",
-                             modem_info.mdm_list[i].powerup_node, strerror(errno));
-                } else {
-                    LOC_LOGD("%s opens success!", modem_info.mdm_list[i].powerup_node);
-                }
-            }
-            else {
-                LOC_LOGD("%s:%d]: powerup_node not present in mdm %d",
-                         __func__, __LINE__, i);
-            }
-        }
-    } else {
-        LOC_LOGD("powerup_node has been opened before");
-    }
-
-err:
     EXIT_LOG(%d, retVal);
     return retVal;
-}
-
-/*===========================================================================
-FUNCTION    loc_close_mdm_node
-
-DESCRIPTION
-   closes mdm_fd which is the modem powerup node obtained in loc_init
-
-DEPENDENCIES
-   None
-
-RETURN VALUE
-   None
-
-SIDE EFFECTS
-   N/A
-
-===========================================================================*/
-static void loc_close_mdm_node()
-{
-    ENTRY_LOG();
-    if (mdm_fd >= 0) {
-        LOC_LOGD("closing the powerup node");
-        close(mdm_fd);
-        mdm_fd = -1;
-        LOC_LOGD("finished closing the powerup node");
-    } else {
-        LOC_LOGD("powerup node has not been opened yet.");
-    }
-
-    EXIT_LOG(%s, VOID_RET);
 }
 
 /*===========================================================================
@@ -384,13 +293,17 @@ SIDE EFFECTS
 static void loc_cleanup()
 {
     ENTRY_LOG();
-
-    loc_afw_data.adapter->setPowerVote(false);
-
     loc_eng_cleanup(loc_afw_data);
-    loc_close_mdm_node();
     gps_loc_cb = NULL;
     gps_sv_cb = NULL;
+
+    /*
+     * if (get_target() == TARGET_NAME_APQ8064_STANDALONE)
+     * {
+     *     close(gss_fd);
+     *     LOC_LOGD("GSS shutdown.\n");
+     * }
+     */
 
     EXIT_LOG(%s, VOID_RET);
 }
@@ -542,14 +455,6 @@ static int loc_inject_location(double latitude, double longitude, float accuracy
     static bool enable_cpi = true;
     ENTRY_LOG();
 
-    if (accuracy < 1000)
-    {
-      accuracy = 1000;
-    }
-
-    int ret_val = 0;
-    ret_val = loc_eng_inject_location(loc_afw_data, latitude, longitude, accuracy);
-
     if(!initialized)
     {
         char value[PROPERTY_VALUE_MAX];
@@ -666,7 +571,19 @@ const void* loc_get_extension(const char* name)
    }
    else if (strcmp(name, AGPS_INTERFACE) == 0)
    {
-       ret_val = &sLocEngAGpsInterface;
+       //Return an interface to AGPS only if MSA or MSB capabilities
+       //are present. If the target is an APQ, these masks are
+       //cleared in get_gps_interface() and the below logic will
+       //return NULL as the interface for AGPS
+       if((gps_conf.CAPABILITIES & GPS_CAPABILITY_MSA) ||
+          (gps_conf.CAPABILITIES & GPS_CAPABILITY_MSB) ) {
+           LOC_LOGD("%s:%d]: AGPS capabilities found\n", __func__, __LINE__);
+           ret_val = &sLocEngAGpsInterface;
+       }
+       else {
+           LOC_LOGD("%s:%d]: Returning NULL AgpsInterface\n", __func__, __LINE__);
+           ret_val = NULL;
+       }
    }
    else if (strcmp(name, GPS_NI_INTERFACE) == 0)
    {

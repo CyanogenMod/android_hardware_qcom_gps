@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,36 +33,33 @@
 #include <ctype.h>
 #include <MsgTask.h>
 #include <LocApiBase.h>
-#include <LBSProxyBase.h>
+#include <IzatProxyBase.h>
 
 namespace loc_core {
 
 class LocAdapterBase;
 
 class ContextBase {
-    static LBSProxyBase* getLBSProxy(const char* libName);
+    static IzatProxyBase* getIzatProxy(const char* libName);
     LocApiBase* createLocApi(LOC_API_ADAPTER_EVENT_MASK_T excludedMask);
 protected:
-    const LBSProxyBase* mLBSProxy;
+    const IzatProxyBase* mIzatProxy;
     const MsgTask* mMsgTask;
     LocApiBase* mLocApi;
-    LocApiProxyBase *mLocApiProxy;
+
 public:
     ContextBase(const MsgTask* msgTask,
                 LOC_API_ADAPTER_EVENT_MASK_T exMask,
                 const char* libName);
-    inline virtual ~ContextBase() { delete mLocApi; delete mLBSProxy; }
+    inline virtual ~ContextBase() { delete mLocApi; delete mIzatProxy; }
 
     inline const MsgTask* getMsgTask() { return mMsgTask; }
     inline LocApiBase* getLocApi() { return mLocApi; }
-    inline LocApiProxyBase* getLocApiProxy() { return mLocApiProxy; }
-    inline bool hasAgpsExtendedCapabilities() { return mLBSProxy->hasAgpsExtendedCapabilities(); }
-    inline bool hasCPIExtendedCapabilities() { return mLBSProxy->hasCPIExtendedCapabilities(); }
+    inline bool hasAgpsExt() { return mIzatProxy->hasAgpsExt(); }
     inline void requestUlp(LocAdapterBase* adapter,
                            unsigned long capabilities) {
-        mLBSProxy->requestUlp(adapter, capabilities);
+        mIzatProxy->requestUlp(adapter, capabilities);
     }
-    inline void sendMsg(const LocMsg *msg) { getMsgTask()->sendMsg(msg); }
 };
 
 } // namespace loc_core

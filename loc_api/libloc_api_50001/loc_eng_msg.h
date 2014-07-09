@@ -119,9 +119,9 @@ struct LocEngReportSv : public LocMsg {
 };
 
 struct LocEngReportStatus : public LocMsg {
-    LocAdapterBase* mAdapter;
+    void* mLocEng;
     const GpsStatusValue mStatus;
-    LocEngReportStatus(LocAdapterBase* adapter,
+    LocEngReportStatus(void* locEng,
                        GpsStatusValue engineStatus);
     virtual void proc() const;
     void locallog() const;
@@ -280,22 +280,7 @@ struct LocEngUp : public LocMsg {
     virtual void log() const;
 };
 
-struct LocEngGetZpp : public LocMsg {
-    LocEngAdapter* mAdapter;
-    LocEngGetZpp(LocEngAdapter* adapter);
-    virtual void proc() const;
-    void locallog() const;
-    virtual void log() const;
-    void send() const;
-};
 
-struct LocEngShutdown : public LocMsg {
-    LocEngAdapter* mAdapter;
-    LocEngShutdown(LocEngAdapter* adapter);
-    virtual void proc() const;
-    void locallog() const;
-    virtual void log() const;
-};
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
