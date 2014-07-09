@@ -74,7 +74,8 @@ LOCAL_SHARED_LIBRARIES := \
     libloc_eng \
     libloc_core \
     libgps.utils \
-    libdl
+    libdl \
+    libmdmdetect
 
 LOCAL_SRC_FILES += \
     loc.cpp \
@@ -82,7 +83,7 @@ LOCAL_SRC_FILES += \
 
 LOCAL_CFLAGS += \
     -fno-short-enums \
-    -D_ANDROID_
+    -D_ANDROID_ \
 
 ifeq ($(TARGET_USES_QCOM_BSP), true)
 LOCAL_CFLAGS += -DTARGET_USES_QCOM_BSP
@@ -91,13 +92,8 @@ endif
 ## Includes
 LOCAL_C_INCLUDES:= \
     $(TARGET_OUT_HEADERS)/gps.utils \
-    $(TARGET_OUT_HEADERS)/libloc_core
-
-ifneq ($(filter msm8084,$(TARGET_BOARD_PLATFORM)),)
-  LOCAL_SHARED_LIBRARIES += libmdmdetect
-  LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/libmdmdetect/inc
-  LOCAL_CFLAGS += -DPLATFORM_MSM8084
-endif
+    $(TARGET_OUT_HEADERS)/libloc_core \
+    $(TARGET_OUT_HEADERS)/libmdmdetect/inc
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw

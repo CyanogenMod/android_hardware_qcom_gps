@@ -44,8 +44,6 @@
 #include <errno.h>
 #include <LocDualContext.h>
 #include <cutils/properties.h>
-
-#ifdef PLATFORM_MSM8084
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -53,7 +51,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /*PLATFORM_MSM8084*/
 using namespace loc_core;
 
 //Globals defns
@@ -302,8 +299,6 @@ static int loc_init(GpsCallbacks* callbacks)
     loc_afw_data.adapter->setPowerVote(true);
 
     LOC_LOGD("loc_eng_init() success!");
-
-#ifdef PLATFORM_MSM8084
     if (mdm_fd < 0) {
         struct dev_info modem_info;
         memset(&modem_info, 0, sizeof(struct dev_info));
@@ -333,7 +328,7 @@ static int loc_init(GpsCallbacks* callbacks)
     } else {
         LOC_LOGD("powerup_node has been opened before");
     }
-#endif //PLATFORM_MSM8084
+
 err:
     EXIT_LOG(%d, retVal);
     return retVal;
