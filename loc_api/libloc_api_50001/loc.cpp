@@ -572,6 +572,7 @@ static int loc_inject_location(double latitude, double longitude, float accuracy
         initialized = true;
     }
 
+    int ret_val = 0;
     if(enable_cpi)
     {
       ret_val = loc_eng_inject_location(loc_afw_data, latitude, longitude, accuracy);

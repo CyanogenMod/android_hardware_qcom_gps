@@ -254,6 +254,15 @@ err:
     return ret;
 }
 
+typedef struct loc_param_v_type
+{
+   char* param_name;
+
+   char* param_str_value;
+   int param_int_value;
+   double param_double_value;
+}loc_param_v_type;
+
 /*===========================================================================
 FUNCTION loc_read_conf
 
