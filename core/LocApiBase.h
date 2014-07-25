@@ -201,6 +201,9 @@ public:
     virtual int openAndStartDataCall();
     virtual void stopDataCall();
     virtual void closeDataCall();
+    virtual void installAGpsCert(const DerEncodedCertificate* pData,
+                                 size_t length,
+                                 uint32_t slotBitMask);
 
     inline virtual void setInSession(bool inSession) {}
 

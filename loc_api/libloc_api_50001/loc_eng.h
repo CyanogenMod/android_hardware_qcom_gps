@@ -146,6 +146,7 @@ typedef struct loc_gps_cfg_s
     unsigned long  LPP_PROFILE;
     uint8_t        NMEA_PROVIDER;
     unsigned long  A_GLONASS_POS_PROTOCOL_SELECT;
+    unsigned long  AGPS_CERT_WRITABLE_MASK;
 } loc_gps_cfg_s_type;
 
 typedef struct
@@ -234,6 +235,10 @@ extern void loc_eng_ni_request_handler(loc_eng_data_s_type &loc_eng_data,
                                    const void* passThrough);
 extern void loc_eng_ni_reset_on_engine_restart(loc_eng_data_s_type &loc_eng_data);
 int loc_eng_read_config(void);
+
+int loc_eng_agps_install_certificates(loc_eng_data_s_type &loc_eng_data,
+                                      const DerEncodedCertificate* certificates,
+                                      size_t length);
 
 #ifdef __cplusplus
 }

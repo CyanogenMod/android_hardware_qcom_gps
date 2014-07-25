@@ -257,6 +257,13 @@ public:
         return mLocApi->getBestAvailableZppFix(zppLoc, tech_mask);
     }
 
+    inline virtual void installAGpsCert(const DerEncodedCertificate* pData,
+                                        size_t length,
+                                        uint32_t slotBitMask)
+    {
+        mLocApi->installAGpsCert(pData, length, slotBitMask);
+    }
+
     virtual void handleEngineDownEvent();
     virtual void handleEngineUpEvent();
     virtual void reportPosition(UlpLocation &location,
