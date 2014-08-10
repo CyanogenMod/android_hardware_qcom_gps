@@ -45,15 +45,6 @@
 #include <LocDualContext.h>
 #include <cutils/properties.h>
 
-#ifdef PLATFORM_MSM8084
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-#include <mdm_detect.h>
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
-#endif /*PLATFORM_MSM8084*/
 using namespace loc_core;
 
 //Globals defns
@@ -319,31 +310,37 @@ static int loc_init(GpsCallbacks* callbacks)
 
 #ifdef PLATFORM_MSM8084
     if (mdm_fd < 0) {
-        struct dev_info modem_info;
-        memset(&modem_info, 0, sizeof(struct dev_info));
-        if(get_system_info(&modem_info) != RET_SUCCESS) {
-            LOC_LOGE("%s:%d]: Error: get_system_info returned error\n",
-                     __func__, __LINE__);
+        int (*open_first_external_modem)(void);
+        const char *name = "libdetectmodem.so";
+        const char *func = "open_first_external_modem";
+        const char *error;
+
+        void *lib = ::dlopen(name, RTLD_NOW);
+        error = ::dlerror();
+        if (!lib) {
+            LOC_LOGE("%s: could not find %s: %s", __func__, name, error);
             goto err;
         }
-        for(i=0; i<modem_info.num_modems; i++) {
-            if((modem_info.mdm_list[i].type == MDM_TYPE_EXTERNAL) &&
-               (modem_info.mdm_list[i].powerup_node)) {
-                LOC_LOGD("%s:%d]: powerup_node: %s", __func__, __LINE__,
-                         modem_info.mdm_list[i].powerup_node);
-                mdm_fd = open(modem_info.mdm_list[i].powerup_node, O_RDONLY);
-                if (mdm_fd < 0) {
-                    LOC_LOGE("Error: %s open failed: %s\n",
-                             modem_info.mdm_list[i].powerup_node, strerror(errno));
-                } else {
-                    LOC_LOGD("%s opens success!", modem_info.mdm_list[i].powerup_node);
-                }
+
+        open_first_external_modem = NULL;
+        *(void **)(&open_first_external_modem) = ::dlsym(lib, func);
+        error = ::dlerror();
+
+        if (!open_first_external_modem) {
+            LOC_LOGE("%s: could not find symbol %s in %s: %s",
+                     __func__, func, name, error);
+        }
+        else {
+            errno = 0;
+            mdm_fd = open_first_external_modem();
+            if (mdm_fd < 0) {
+                LOC_LOGE("%s: %s failed: %s\n", __func__, func, strerror(errno));
             }
             else {
-                LOC_LOGD("%s:%d]: powerup_node not present in mdm %d",
-                         __func__, __LINE__, i);
+                LOC_LOGD("%s: external power up modem opened successfully\n", __func__);
             }
         }
+        dlclose(lib);
     } else {
         LOC_LOGD("powerup_node has been opened before");
     }
