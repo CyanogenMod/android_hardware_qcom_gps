@@ -94,8 +94,6 @@ LOCAL_C_INCLUDES:= \
     $(TARGET_OUT_HEADERS)/libloc_core
 
 ifneq ($(filter msm8084,$(TARGET_BOARD_PLATFORM)),)
-  LOCAL_SHARED_LIBRARIES += libmdmdetect
-  LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/libmdmdetect/inc
   LOCAL_CFLAGS += -DPLATFORM_MSM8084
 endif
 
