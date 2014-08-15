@@ -50,9 +50,11 @@ using namespace loc_core;
 //Globals defns
 static gps_location_callback gps_loc_cb = NULL;
 static gps_sv_status_callback gps_sv_cb = NULL;
+static agps_status_callback agps_status_cb = NULL;
 
 static void local_loc_cb(UlpLocation* location, void* locExt);
 static void local_sv_cb(GpsSvStatus* sv_status, void* svExt);
+static void loc_agps_status_cb(AGpsStatus* status);
 
 static const GpsGeofencingInterface* get_geofence_interface(void);
 
@@ -733,6 +735,10 @@ SIDE EFFECTS
 static void loc_agps_init(AGpsCallbacks* callbacks)
 {
     ENTRY_LOG();
+    if (agps_status_cb == NULL) {
+        agps_status_cb = callbacks->status_cb;
+        callbacks->status_cb = loc_agps_status_cb;
+    }
     loc_eng_agps_init(loc_afw_data, (AGpsExtCallbacks*)callbacks);
     EXIT_LOG(%s, VOID_RET);
 }
@@ -1070,3 +1076,17 @@ static void local_sv_cb(GpsSvStatus* sv_status, void* svExt)
     }
     EXIT_LOG(%s, VOID_RET);
 }
+
+static void loc_agps_status_cb(AGpsStatus* status)
+{
+    ENTRY_LOG();
+
+    if (NULL != agps_status_cb) {
+        size_t realSize = sizeof(AGpsStatus);
+        LOC_LOGD("agps_status size=%d real-size=%d", status->size, realSize);
+        status->size = realSize;
+        agps_status_cb(status);
+    }
+    EXIT_LOG(%s, VOID_RET);
+}
+

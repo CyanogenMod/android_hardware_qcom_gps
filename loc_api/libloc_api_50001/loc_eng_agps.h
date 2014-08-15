@@ -345,7 +345,8 @@ struct ATLSubscriber : public Subscriber {
     { v4 = INADDR_NONE; v6[0] = 0; }
 
     inline virtual void setIPAddresses(struct sockaddr_storage& addr)
-    { addr.ss_family = AF_INET6; }
+    { memset(&addr, 0,  sizeof(addr));
+      addr.ss_family = AF_INET6; }
 
     inline virtual Subscriber* clone()
     {
