@@ -139,31 +139,31 @@ typedef struct loc_eng_data_s
 /* GPS.conf support */
 typedef struct loc_gps_cfg_s
 {
-    unsigned long  INTERMEDIATE_POS;
-    unsigned long  ACCURACY_THRES;
-    unsigned long  SUPL_VER;
-    unsigned long  CAPABILITIES;
-    unsigned long  LPP_PROFILE;
+    uint32_t       INTERMEDIATE_POS;
+    uint32_t       ACCURACY_THRES;
+    uint32_t       SUPL_VER;
+    uint32_t       CAPABILITIES;
+    uint32_t       LPP_PROFILE;
     uint8_t        NMEA_PROVIDER;
-    unsigned long  A_GLONASS_POS_PROTOCOL_SELECT;
-    unsigned long  AGPS_CERT_WRITABLE_MASK;
+    uint32_t       A_GLONASS_POS_PROTOCOL_SELECT;
+    uint32_t       AGPS_CERT_WRITABLE_MASK;
 } loc_gps_cfg_s_type;
 
 typedef struct
 {
     uint8_t        GYRO_BIAS_RANDOM_WALK_VALID;
     double         GYRO_BIAS_RANDOM_WALK;
-    unsigned long  SENSOR_ACCEL_BATCHES_PER_SEC;
-    unsigned long  SENSOR_ACCEL_SAMPLES_PER_BATCH;
-    unsigned long  SENSOR_GYRO_BATCHES_PER_SEC;
-    unsigned long  SENSOR_GYRO_SAMPLES_PER_BATCH;
-    unsigned long  SENSOR_ACCEL_BATCHES_PER_SEC_HIGH;
-    unsigned long  SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH;
-    unsigned long  SENSOR_GYRO_BATCHES_PER_SEC_HIGH;
-    unsigned long  SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH;
-    unsigned long  SENSOR_CONTROL_MODE;
-    unsigned long  SENSOR_USAGE;
-    unsigned long  SENSOR_ALGORITHM_CONFIG_MASK;
+    uint32_t       SENSOR_ACCEL_BATCHES_PER_SEC;
+    uint32_t       SENSOR_ACCEL_SAMPLES_PER_BATCH;
+    uint32_t       SENSOR_GYRO_BATCHES_PER_SEC;
+    uint32_t       SENSOR_GYRO_SAMPLES_PER_BATCH;
+    uint32_t       SENSOR_ACCEL_BATCHES_PER_SEC_HIGH;
+    uint32_t       SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH;
+    uint32_t       SENSOR_GYRO_BATCHES_PER_SEC_HIGH;
+    uint32_t       SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH;
+    uint32_t       SENSOR_CONTROL_MODE;
+    uint32_t       SENSOR_USAGE;
+    uint32_t       SENSOR_ALGORITHM_CONFIG_MASK;
     uint8_t        ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID;
     double         ACCEL_RANDOM_WALK_SPECTRAL_DENSITY;
     uint8_t        ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID;
@@ -172,7 +172,7 @@ typedef struct
     double         RATE_RANDOM_WALK_SPECTRAL_DENSITY;
     uint8_t        VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID;
     double         VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY;
-    unsigned long  SENSOR_PROVIDER;
+    uint32_t       SENSOR_PROVIDER;
 } loc_sap_cfg_s_type;
 
 extern loc_gps_cfg_s_type gps_conf;
@@ -239,6 +239,9 @@ int loc_eng_read_config(void);
 int loc_eng_agps_install_certificates(loc_eng_data_s_type &loc_eng_data,
                                       const DerEncodedCertificate* certificates,
                                       size_t length);
+
+void loc_eng_configuration_update (loc_eng_data_s_type &loc_eng_data,
+                                   const char* config_data, int32_t length);
 
 #ifdef __cplusplus
 }
