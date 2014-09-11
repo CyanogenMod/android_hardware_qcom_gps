@@ -92,13 +92,21 @@ loc_gps_cfg_s_type gps_conf;
 loc_sap_cfg_s_type sap_conf;
 
 /* Parameter spec table */
-static loc_param_s_type loc_parameter_table[] =
+static loc_param_s_type gps_conf_table[] =
 {
+  {"GPS_LOCK",                       &gps_conf.GPS_LOCK,                       NULL, 'n'},
+  {"SUPL_VER",                       &gps_conf.SUPL_VER,                       NULL, 'n'},
+  {"LPP_PROFILE",                    &gps_conf.LPP_PROFILE,                    NULL, 'n'},
+  {"A_GLONASS_POS_PROTOCOL_SELECT",  &gps_conf.A_GLONASS_POS_PROTOCOL_SELECT,  NULL, 'n'},
+  {"AGPS_CERT_WRITABLE_MASK",        &gps_conf.AGPS_CERT_WRITABLE_MASK,        NULL, 'n'},
   {"INTERMEDIATE_POS",               &gps_conf.INTERMEDIATE_POS,               NULL, 'n'},
   {"ACCURACY_THRES",                 &gps_conf.ACCURACY_THRES,                 NULL, 'n'},
   {"NMEA_PROVIDER",                  &gps_conf.NMEA_PROVIDER,                  NULL, 'n'},
-  {"SUPL_VER",                       &gps_conf.SUPL_VER,                       NULL, 'n'},
   {"CAPABILITIES",                   &gps_conf.CAPABILITIES,                   NULL, 'n'},
+};
+
+static loc_param_s_type sap_conf_table[] =
+{
   {"GYRO_BIAS_RANDOM_WALK",          &sap_conf.GYRO_BIAS_RANDOM_WALK,          &sap_conf.GYRO_BIAS_RANDOM_WALK_VALID, 'f'},
   {"ACCEL_RANDOM_WALK_SPECTRAL_DENSITY",     &sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY,    &sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
   {"ANGLE_RANDOM_WALK_SPECTRAL_DENSITY",     &sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY,    &sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID, 'f'},
@@ -115,10 +123,7 @@ static loc_param_s_type loc_parameter_table[] =
   {"SENSOR_CONTROL_MODE",            &sap_conf.SENSOR_CONTROL_MODE,            NULL, 'n'},
   {"SENSOR_USAGE",                   &sap_conf.SENSOR_USAGE,                   NULL, 'n'},
   {"SENSOR_ALGORITHM_CONFIG_MASK",   &sap_conf.SENSOR_ALGORITHM_CONFIG_MASK,   NULL, 'n'},
-  {"LPP_PROFILE",                    &gps_conf.LPP_PROFILE,                    NULL, 'n'},
-  {"A_GLONASS_POS_PROTOCOL_SELECT",  &gps_conf.A_GLONASS_POS_PROTOCOL_SELECT,  NULL, 'n'},
   {"SENSOR_PROVIDER",                &sap_conf.SENSOR_PROVIDER,                NULL, 'n'},
-  {"AGPS_CERT_WRITABLE_MASK",        &gps_conf.AGPS_CERT_WRITABLE_MASK,        NULL, 'n'},
 };
 
 static void loc_default_parameters(void)
@@ -127,6 +132,7 @@ static void loc_default_parameters(void)
    gps_conf.INTERMEDIATE_POS = 0;
    gps_conf.ACCURACY_THRES = 0;
    gps_conf.NMEA_PROVIDER = 0;
+   gps_conf.GPS_LOCK = 0;
    gps_conf.SUPL_VER = 0x10000;
    gps_conf.CAPABILITIES = 0x7;
 
@@ -1572,7 +1578,8 @@ int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
     }
 
     STATE_CHECK((NULL == loc_eng_data.adapter),
-                "instance already initialized", return 0);
+                "instance already initialized",
+                return loc_eng_data.adapter->setGpsLockMsg(0));
 
     memset(&loc_eng_data, 0, sizeof (loc_eng_data));
 
@@ -1585,6 +1592,7 @@ int loc_eng_init(loc_eng_data_s_type &loc_eng_data, LocCallbacks* callbacks,
     loc_eng_data.sv_status_cb = callbacks->sv_status_cb;
     loc_eng_data.status_cb    = callbacks->status_cb;
     loc_eng_data.nmea_cb      = callbacks->nmea_cb;
+    loc_eng_data.set_capabilities_cb = callbacks->set_capabilities_cb;
     loc_eng_data.acquire_wakelock_cb = callbacks->acquire_wakelock_cb;
     loc_eng_data.release_wakelock_cb = callbacks->release_wakelock_cb;
     loc_eng_data.request_utc_time_cb = callbacks->request_utc_time_cb;
@@ -1715,6 +1723,8 @@ void loc_eng_cleanup(loc_eng_data_s_type &loc_eng_data)
         LOC_LOGD("loc_eng_cleanup: fix not stopped. stop it now.");
         loc_eng_stop(loc_eng_data);
     }
+
+    loc_eng_data.adapter->setGpsLockMsg(gps_conf.GPS_LOCK);
 
 #if 0 // can't afford to actually clean up, for many reason.
 
@@ -2379,7 +2389,14 @@ static int loc_eng_set_server(loc_eng_data_s_type &loc_eng_data,
 
     if (LOC_AGPS_SUPL_SERVER == type) {
         char url[MAX_URL_LEN];
-        unsigned int len = snprintf(url, sizeof(url), "%s:%u", hostname, (unsigned) port);
+        unsigned int len = 0;
+        const char nohost[] = "NONE";
+        if (hostname == NULL ||
+            strncasecmp(nohost, hostname, sizeof(nohost)) == 0) {
+            url[0] = NULL;
+        } else {
+            len = snprintf(url, sizeof(url), "%s:%u", hostname, (unsigned) port);
+        }
 
         if (sizeof(url) > len) {
             adapter->sendMsg(new LocEngSetServerUrl(adapter, url, len));
@@ -2555,7 +2572,7 @@ void loc_eng_configuration_update (loc_eng_data_s_type &loc_eng_data,
 
     if (config_data && length > 0) {
         loc_gps_cfg_s_type gps_conf_old = gps_conf;
-        UTIL_UPDATE_CONF(config_data, length, loc_parameter_table);
+        UTIL_UPDATE_CONF(config_data, length, gps_conf_table);
         LocEngAdapter* adapter = loc_eng_data.adapter;
 
         // it is possible that HAL is not init'ed at this time
@@ -2570,7 +2587,15 @@ void loc_eng_configuration_update (loc_eng_data_s_type &loc_eng_data,
                 adapter->sendMsg(new LocEngAGlonassProtocol(adapter,
                                                             gps_conf.A_GLONASS_POS_PROTOCOL_SELECT));
             }
+            if (NULL != loc_eng_data.set_capabilities_cb) {
+                gps_conf.CAPABILITIES &= gps_conf_old.CAPABILITIES;
+                if (gps_conf.CAPABILITIES != gps_conf_old.CAPABILITIES) {
+                    loc_eng_data.set_capabilities_cb(gps_conf.CAPABILITIES);
+                }
+            }
         }
+
+        gps_conf.CAPABILITIES = gps_conf_old.CAPABILITIES;
     }
 
     EXIT_LOG(%s, VOID_RET);
@@ -2746,8 +2771,8 @@ int loc_eng_read_config(void)
       loc_default_parameters();
       // We only want to parse the conf file once. This is a good place to ensure that.
       // In fact one day the conf file should go into context.
-      UTIL_READ_CONF(GPS_CONF_FILE, loc_parameter_table);
-      UTIL_READ_CONF(SAP_CONF_FILE, loc_parameter_table);
+      UTIL_READ_CONF(GPS_CONF_FILE, gps_conf_table);
+      UTIL_READ_CONF(SAP_CONF_FILE, sap_conf_table);
       configAlreadyRead = true;
     } else {
       LOC_LOGV("GPS Config file has already been read\n");

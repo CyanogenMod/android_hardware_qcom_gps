@@ -376,6 +376,11 @@ enum loc_api_adapter_event_index {
 
 typedef unsigned int LOC_API_ADAPTER_EVENT_MASK_T;
 
+typedef uint32_t LOC_GPS_LOCK_MASK;
+#define isGpsLockNone(lock) ((lock) == 0)
+#define isGpsLockMO(lock) ((lock) & ((LOC_GPS_LOCK_MASK)1))
+#define isGpsLockMT(lock) ((lock) & ((LOC_GPS_LOCK_MASK)2))
+#define isGpsLockAll(lock) (((lock) & ((LOC_GPS_LOCK_MASK)3)) == 3)
 
 #ifdef __cplusplus
 }
