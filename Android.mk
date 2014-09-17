@@ -1,3 +1,5 @@
+ifeq ($(call my-dir),$(call project-path-for,qcom-gps))
+
 # TODO:  Find a better way to separate build configs for ADP vs non-ADP devices
 ifneq ($(TARGET_BOARD_AUTO),true)
   ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
@@ -38,4 +40,6 @@ ifneq ($(TARGET_BOARD_AUTO),true)
     endif #BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET
 
   endif #BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
+endif
+
 endif
