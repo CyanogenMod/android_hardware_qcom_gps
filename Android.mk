@@ -1,5 +1,6 @@
-ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
-LOCAL_PATH := $(call my-dir)
+ifeq ($(TARGET_GPS_HAL_PATH),)
+
+ifeq ($(call my-dir),$(call project-path-for,qcom-gps))
 
 ifeq ($(BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET),true)
 
@@ -23,4 +24,6 @@ else ifeq ($(filter msm8916,$(TARGET_BOARD_PLATFORM)),)
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET
 
-endif #BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
+endif
+
+endif
