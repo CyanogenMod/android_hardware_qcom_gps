@@ -138,6 +138,9 @@ typedef struct loc_eng_data_s
 } loc_eng_data_s_type;
 
 /* GPS.conf support */
+/* NOTE: the implementaiton of the parser casts number
+   fields to 32 bit. To ensure all 'n' fields working,
+   they must all be 32 bit fields. */
 typedef struct loc_gps_cfg_s
 {
     uint32_t       INTERMEDIATE_POS;
@@ -145,12 +148,19 @@ typedef struct loc_gps_cfg_s
     uint32_t       SUPL_VER;
     uint32_t       CAPABILITIES;
     uint32_t       LPP_PROFILE;
-    uint8_t        NMEA_PROVIDER;
-    uint8_t        GPS_LOCK;
+    uint32_t       NMEA_PROVIDER;
+    uint32_t       GPS_LOCK;
     uint32_t       A_GLONASS_POS_PROTOCOL_SELECT;
     uint32_t       AGPS_CERT_WRITABLE_MASK;
 } loc_gps_cfg_s_type;
 
+/* NOTE: the implementaiton of the parser casts number
+   fields to 32 bit. To ensure all 'n' fields working,
+   they must all be 32 bit fields. */
+/* Meanwhile, *_valid fields are 8 bit fields, and 'f'
+   fields are double. Rigid as they are, it is the
+   the status quo, until the parsing mechanism is
+   change, that is. */
 typedef struct
 {
     uint8_t        GYRO_BIAS_RANDOM_WALK_VALID;
