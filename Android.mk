@@ -1,5 +1,6 @@
-ifneq ($(BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE),)
-LOCAL_PATH := $(call my-dir)
+ifeq ($(TARGET_GPS_HAL_PATH),)
+
+ifeq ($(call my-dir),$(call project-path-for,qcom-gps))
 
 ifneq ($(filter msm8960 apq8064 ,$(TARGET_BOARD_PLATFORM)),)
     #For msm8960/apq8064 targets
@@ -9,4 +10,7 @@ else
     GPS_DIRS=core utils loc_api platform_lib_abstractions etc
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #TARGET_BOARD_PLATFORM
-endif #BOARD_VENDOR_QCOM_GPS_LOC_API_HARDWARE
+
+endif
+
+endif
