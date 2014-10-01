@@ -1,4 +1,4 @@
-ifeq ($(call my-dir),$(QCOM_GPS_PATH))
+ifeq ($(call my-dir),$(call project-path-for,qcom-gps))
 
 include $(call all-subdir-makefiles)
 
