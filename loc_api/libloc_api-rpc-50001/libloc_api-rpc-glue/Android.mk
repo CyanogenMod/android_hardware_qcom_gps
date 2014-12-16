@@ -31,7 +31,6 @@ LOCAL_SHARED_LIBRARIES:= \
 LOCAL_STATIC_LIBRARIES := \
     libloc_api_rpcgen
 
-LOCAL_PRELINK_MODULE:= false
 
 LOCAL_C_INCLUDES:= \
     $(LOCAL_PATH) \
