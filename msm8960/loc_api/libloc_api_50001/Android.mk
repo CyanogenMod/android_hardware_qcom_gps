@@ -54,7 +54,6 @@ LOCAL_COPY_HEADERS:= \
    loc_eng_msg.h \
    loc_eng_log.h
 
-LOCAL_PRELINK_MODULE := false
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -93,7 +92,6 @@ LOCAL_C_INCLUDES:= \
     $(TARGET_OUT_HEADERS)/gps.utils \
     $(TARGET_OUT_HEADERS)/libloc_core
 
-LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
 include $(BUILD_SHARED_LIBRARY)
