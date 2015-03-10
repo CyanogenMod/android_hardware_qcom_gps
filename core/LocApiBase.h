@@ -121,6 +121,7 @@ public:
     void reportDataCallOpened();
     void reportDataCallClosed();
     void requestNiNotify(GpsNiNotification &notify, const void* data);
+    void reportGpsMeasurementData(GpsData &gpsMeasurementData);
 
     // downward calls
     // All below functions are to be defined by adapter specific modules:
@@ -220,6 +221,16 @@ public:
       -1 on failure
      */
     virtual int getGpsLock(void);
+
+    /*
+      Update gps reporting events
+     */
+    virtual int updateRegistrationMask(LOC_API_ADAPTER_EVENT_MASK_T event,
+                                       loc_registration_mask_status isEnabled);
+    /*
+      Check if the modem support the service
+     */
+    virtual bool gnssConstellationConfig();
 };
 
 typedef LocApiBase* (getLocApi_t)(const MsgTask* msgTask,
