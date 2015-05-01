@@ -67,6 +67,8 @@ typedef unsigned char boolean;
 #define FAILURE                 FALSE
 #define INVALID_ATL_CONNECTION_HANDLE -1
 
+#define MAX_XTRA_SERVER_URL_LENGTH 256
+
 enum loc_nmea_provider_e_type {
     NMEA_PROVIDER_AP = 0, // Application Processor Provider of NMEA
     NMEA_PROVIDER_MP // Modem Processor Provider of NMEA
@@ -153,6 +155,9 @@ typedef struct loc_gps_cfg_s
     uint32_t       GPS_LOCK;
     uint32_t       A_GLONASS_POS_PROTOCOL_SELECT;
     uint32_t       AGPS_CERT_WRITABLE_MASK;
+    char           XTRA_SERVER_1[MAX_XTRA_SERVER_URL_LENGTH];
+    char           XTRA_SERVER_2[MAX_XTRA_SERVER_URL_LENGTH];
+    char           XTRA_SERVER_3[MAX_XTRA_SERVER_URL_LENGTH];
 } loc_gps_cfg_s_type;
 
 /* NOTE: the implementaiton of the parser casts number
