@@ -763,7 +763,6 @@ int AgpsStateMachine::sendRsrcRequest(AGpsStatusValue action) const
         if (s == NULL) {
             nifRequest.ipv4_addr = INADDR_NONE;
             memset(&nifRequest.addr, 0,  sizeof(nifRequest.addr));
-            nifRequest.addr.ss_family = AF_INET6;
             nifRequest.ssid[0] = '\0';
             nifRequest.password[0] = '\0';
         } else {

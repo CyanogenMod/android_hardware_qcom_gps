@@ -45,16 +45,27 @@
 #include <LocDualContext.h>
 #include <cutils/properties.h>
 
+#ifdef MODEM_POWER_VOTE
+#include <pm-service.h>
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+#include <mdm_detect.h>
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+#endif /*MODEM_POWER_VOTE*/
+
 using namespace loc_core;
+
+#define LOC_PM_CLIENT_NAME "GPS"
 
 //Globals defns
 static gps_location_callback gps_loc_cb = NULL;
 static gps_sv_status_callback gps_sv_cb = NULL;
-static agps_status_callback agps_status_cb = NULL;
 
 static void local_loc_cb(UlpLocation* location, void* locExt);
 static void local_sv_cb(GpsSvStatus* sv_status, void* svExt);
-static void loc_agps_status_cb(AGpsStatus* status);
 
 static const GpsGeofencingInterface* get_geofence_interface(void);
 
@@ -125,6 +136,22 @@ static const GpsNiInterface sLocEngNiInterface =
    loc_ni_respond,
 };
 
+#ifdef MODEM_POWER_VOTE
+typedef struct {
+    //MAX_NAME_LEN defined in mdm_detect.h
+    char modem_name[MAX_NAME_LEN];
+    //MAX_PATH_LEN defined in mdm_detect.h
+    char powerup_node[MAX_PATH_LEN];
+    //this handle is used by peripheral mgr
+    void *handle;
+    int mdm_fd;
+    MdmType mdm_type;
+    bool peripheral_mgr_supported;
+    bool peripheral_mgr_registered;
+}s_loc_mdm_info;
+static s_loc_mdm_info loc_mdm_info;
+static void loc_pm_event_notifier(void *client_data, enum pm_event event);
+#endif /*MODEM_POWER_VOTE*/
 // For shutting down MDM in fusion devices
 static int mdm_fd = -1;
 static int loc_gps_measurement_init(GpsMeasurementCallbacks* callbacks);
@@ -233,6 +260,7 @@ extern "C" const GpsInterface* get_gps_interface()
     switch (gnssType)
     {
     case GNSS_GSS:
+    case GNSS_AUTO:
         //APQ8064
         gps_conf.CAPABILITIES &= ~(GPS_CAPABILITY_MSA | GPS_CAPABILITY_MSB);
         gss_fd = open("/dev/gss", O_RDONLY);
@@ -277,7 +305,11 @@ SIDE EFFECTS
 static int loc_init(GpsCallbacks* callbacks)
 {
     int retVal = -1;
-    int i = 0;
+#ifdef MODEM_POWER_VOTE
+    enum pm_event mdm_state;
+    static int mdm_index = -1;
+    int peripheral_mgr_ret = PM_RET_FAILED;
+#endif /*MODEM_POWER_VOTE*/
     ENTRY_LOG();
     LOC_API_ADAPTER_EVENT_MASK_T event;
 
@@ -315,8 +347,9 @@ static int loc_init(GpsCallbacks* callbacks)
     retVal = loc_eng_init(loc_afw_data, &clientCallbacks, event, NULL);
     loc_afw_data.adapter->mSupportsAgpsRequests = !loc_afw_data.adapter->hasAgpsExtendedCapabilities();
     loc_afw_data.adapter->mSupportsPositionInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
+    loc_afw_data.adapter->mSupportsTimeInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
     loc_afw_data.adapter->setGpsLockMsg(0);
-    loc_afw_data.adapter->requestUlp(gps_conf.CAPABILITIES);
+    loc_afw_data.adapter->requestUlp(getCarrierCapabilities());
 
     if(retVal) {
         LOC_LOGE("loc_eng_init() fail!");
@@ -328,43 +361,90 @@ static int loc_init(GpsCallbacks* callbacks)
 
     LOC_LOGD("loc_eng_init() success!");
 
-#ifdef PLATFORM_MSM8084
-    if (mdm_fd < 0) {
-        int (*open_first_external_modem)(void);
-        const char *name = "libdetectmodem.so";
-        const char *func = "open_first_external_modem";
-        const char *error;
-
-        void *lib = ::dlopen(name, RTLD_NOW);
-        error = ::dlerror();
-        if (!lib) {
-            LOC_LOGE("%s: could not find %s: %s", __func__, name, error);
+#ifdef MODEM_POWER_VOTE
+    //if index is 0 or more, then we've looked for mdm already
+    LOC_LOGD("%s:%d]: mdm_index: %d", __func__, __LINE__,
+             mdm_index);
+    if (mdm_index < 0) {
+        struct dev_info modem_info;
+        memset(&modem_info, 0, sizeof(struct dev_info));
+        if(get_system_info(&modem_info) != RET_SUCCESS) {
+            LOC_LOGE("%s:%d]: Error: get_system_info returned error\n",
+                     __func__, __LINE__);
             goto err;
         }
 
-        open_first_external_modem = NULL;
-        *(void **)(&open_first_external_modem) = ::dlsym(lib, func);
-        error = ::dlerror();
+        for(mdm_index = 0;
+            mdm_index < modem_info.num_modems;
+            mdm_index++) {
+            if(modem_info.mdm_list[mdm_index].mdm_name) {
+                //Copy modem name to register with peripheral manager
+                strlcpy(loc_mdm_info.modem_name,
+                        modem_info.mdm_list[mdm_index].mdm_name,
+                        sizeof(loc_mdm_info.modem_name));
+                //copy powerup node name if we need to use mdmdetect method
+                strlcpy(loc_mdm_info.powerup_node,
+                        modem_info.mdm_list[mdm_index].powerup_node,
+                        sizeof(loc_mdm_info.powerup_node));
+                loc_mdm_info.mdm_type = modem_info.mdm_list[mdm_index].type;
+                LOC_LOGD("%s:%d]: Found modem: %s, powerup node:%s at index: %d",
+                         __func__, __LINE__, loc_mdm_info.modem_name, loc_mdm_info.powerup_node,
+                         mdm_index);
+                break;
+            }
+        }
+    }
 
-        if (!open_first_external_modem) {
-            LOC_LOGE("%s: could not find symbol %s in %s: %s",
-                     __func__, func, name, error);
+    if(loc_mdm_info.peripheral_mgr_registered != true) {
+        peripheral_mgr_ret = pm_client_register(loc_pm_event_notifier,
+                                                &loc_mdm_info,
+                                                loc_mdm_info.modem_name,
+                                                LOC_PM_CLIENT_NAME,
+                                                &mdm_state,
+                                                &loc_mdm_info.handle);
+        if(peripheral_mgr_ret == PM_RET_SUCCESS) {
+            loc_mdm_info.peripheral_mgr_supported = true;
+            loc_mdm_info.peripheral_mgr_registered = true;
+            LOC_LOGD("%s:%d]: registered with peripheral mgr for %s",
+                     __func__, __LINE__, loc_mdm_info.modem_name);
+        }
+        else if(peripheral_mgr_ret == PM_RET_UNSUPPORTED) {
+            loc_mdm_info.peripheral_mgr_registered = true;
+            loc_mdm_info.peripheral_mgr_supported = false;
+            LOC_LOGD("%s:%d]: peripheral mgr unsupported for: %s",
+                     __func__, __LINE__, loc_mdm_info.modem_name);
         }
         else {
-            errno = 0;
-            mdm_fd = open_first_external_modem();
-            if (mdm_fd < 0) {
-                LOC_LOGE("%s: %s failed: %s\n", __func__, func, strerror(errno));
-            }
-            else {
-                LOC_LOGD("%s: external power up modem opened successfully\n", __func__);
-            }
+            //Not setting any flags here so that we can try again the next time around
+            LOC_LOGE("%s:%d]: Error: pm_client_register returned: %d",
+                     __func__, __LINE__, peripheral_mgr_ret);
         }
-        dlclose(lib);
-    } else {
-        LOC_LOGD("powerup_node has been opened before");
     }
-#endif //PLATFORM_MSM8084
+
+    if(loc_mdm_info.peripheral_mgr_supported == false &&
+       loc_mdm_info.peripheral_mgr_registered == true) {
+        //Peripheral mgr is not supported
+        //use legacy method to open the powerup node
+        LOC_LOGD("%s:%d]: powerup_node: %s", __func__, __LINE__,
+                 loc_mdm_info.powerup_node);
+        loc_mdm_info.mdm_fd = open(loc_mdm_info.powerup_node, O_RDONLY);
+
+        if (loc_mdm_info.mdm_fd < 0) {
+            LOC_LOGE("Error: %s open failed: %s\n",
+                     loc_mdm_info.powerup_node, strerror(errno));
+        } else {
+            LOC_LOGD("%s opens success!", loc_mdm_info.powerup_node);
+        }
+    }
+    else if(loc_mdm_info.peripheral_mgr_supported == true &&
+            loc_mdm_info.peripheral_mgr_registered == true) {
+        LOC_LOGD("%s:%d]: Voting for modem power up", __func__, __LINE__);
+        pm_client_connect(loc_mdm_info.handle);
+    }
+    else {
+        LOC_LOGD("%s:%d]: Not voted for modem power up due to errors", __func__, __LINE__);
+    }
+#endif /*MODEM_POWER_VOTE*/
 err:
     EXIT_LOG(%d, retVal);
     return retVal;
@@ -374,7 +454,7 @@ err:
 FUNCTION    loc_close_mdm_node
 
 DESCRIPTION
-   closes mdm_fd which is the modem powerup node obtained in loc_init
+   closes loc_mdm_info.mdm_fd which is the modem powerup node obtained in loc_init
 
 DEPENDENCIES
    None
@@ -389,15 +469,21 @@ SIDE EFFECTS
 static void loc_close_mdm_node()
 {
     ENTRY_LOG();
-    if (mdm_fd >= 0) {
+#ifdef MODEM_POWER_VOTE
+    if(loc_mdm_info.peripheral_mgr_supported == true) {
+        LOC_LOGD("%s:%d]: Voting for modem power down", __func__, __LINE__);
+        pm_client_disconnect(loc_mdm_info.handle);
+    }
+    else if (loc_mdm_info.mdm_fd >= 0) {
         LOC_LOGD("closing the powerup node");
-        close(mdm_fd);
-        mdm_fd = -1;
+        close(loc_mdm_info.mdm_fd);
+        loc_mdm_info.mdm_fd = -1;
         LOC_LOGD("finished closing the powerup node");
-    } else {
+    }
+    else {
         LOC_LOGD("powerup node has not been opened yet.");
     }
-
+#endif /*MODEM_POWER_VOTE*/
     EXIT_LOG(%s, VOID_RET);
 }
 
@@ -575,39 +661,11 @@ SIDE EFFECTS
 ===========================================================================*/
 static int loc_inject_location(double latitude, double longitude, float accuracy)
 {
-    static bool initialized = false;
-    static bool enable_cpi = true;
     ENTRY_LOG();
-
-    if (accuracy < 1000)
-    {
-      accuracy = 1000;
-    }
 
     int ret_val = 0;
     ret_val = loc_eng_inject_location(loc_afw_data, latitude, longitude, accuracy);
 
-    if(!initialized)
-    {
-        char value[PROPERTY_VALUE_MAX];
-        memset(value, 0, sizeof(value));
-        (void)property_get("persist.gps.qc_nlp_in_use", value, "0");
-        if(0 == strcmp(value, "1"))
-        {
-            enable_cpi = false;
-            LOC_LOGI("GPS HAL coarse position injection disabled");
-        }
-        else
-        {
-            LOC_LOGI("GPS HAL coarse position injection enabled");
-        }
-        initialized = true;
-    }
-
-    if(enable_cpi)
-    {
-      ret_val = loc_eng_inject_location(loc_afw_data, latitude, longitude, accuracy);
-    }
     EXIT_LOG(%d, ret_val);
     return ret_val;
 }
@@ -663,7 +721,7 @@ const GpsGeofencingInterface* get_geofence_interface(void)
     }
     dlerror();    /* Clear any existing error */
     get_gps_geofence_interface = (get_gps_geofence_interface_function)dlsym(handle, "gps_geofence_get_interface");
-    if ((error = dlerror()) != NULL)  {
+    if ((error = dlerror()) != NULL && NULL != get_gps_geofence_interface)  {
         LOC_LOGE ("%s, dlsym for get_gps_geofence_interface failed, error = %s\n", __func__, error);
         goto exit;
      }
@@ -762,10 +820,6 @@ SIDE EFFECTS
 static void loc_agps_init(AGpsCallbacks* callbacks)
 {
     ENTRY_LOG();
-    if (agps_status_cb == NULL) {
-        agps_status_cb = callbacks->status_cb;
-        callbacks->status_cb = loc_agps_status_cb;
-    }
     loc_eng_agps_init(loc_afw_data, (AGpsExtCallbacks*)callbacks);
     EXIT_LOG(%s, VOID_RET);
 }
@@ -980,8 +1034,12 @@ SIDE EFFECTS
 static int loc_xtra_inject_data(char* data, int length)
 {
     ENTRY_LOG();
-    int ret_val = loc_eng_xtra_inject_data(loc_afw_data, data, length);
-
+    int ret_val = -1;
+    if( (data != NULL) && ((unsigned int)length <= XTRA_DATA_MAX_SIZE))
+        ret_val = loc_eng_xtra_inject_data(loc_afw_data, data, length);
+    else
+        LOC_LOGE("%s, Could not inject XTRA data. Buffer address: %p, length: %d",
+                 __func__, data, length);
     EXIT_LOG(%d, ret_val);
     return ret_val;
 }
@@ -1125,7 +1183,7 @@ static int loc_agps_revoke_certificates(const Sha1CertificateFingerprint* finger
                                         size_t length)
 {
     ENTRY_LOG();
-    LOC_LOGE("agps_revoke_certificates not supported");
+    LOC_LOGE("%s:%d]: agps_revoke_certificates not supported");
     int ret_val = AGPS_CERTIFICATE_ERROR_GENERIC;
     EXIT_LOG(%d, ret_val);
     return ret_val;
@@ -1161,16 +1219,12 @@ static void local_sv_cb(GpsSvStatus* sv_status, void* svExt)
     EXIT_LOG(%s, VOID_RET);
 }
 
-static void loc_agps_status_cb(AGpsStatus* status)
+#ifdef MODEM_POWER_VOTE
+static void loc_pm_event_notifier(void *client_data, enum pm_event event)
 {
     ENTRY_LOG();
-
-    if (NULL != agps_status_cb) {
-        size_t realSize = sizeof(AGpsStatus);
-        LOC_LOGD("agps_status size=%d real-size=%d", status->size, realSize);
-        status->size = realSize;
-        agps_status_cb(status);
-    }
+    LOC_LOGD("%s:%d]: event: %d", __func__, __LINE__, (int)event);
+    pm_client_event_acknowledge(loc_mdm_info.handle, event);
     EXIT_LOG(%s, VOID_RET);
 }
-
+#endif /*MODEM_POWER_VOTE*/

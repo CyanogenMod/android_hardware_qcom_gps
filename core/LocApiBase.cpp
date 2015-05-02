@@ -128,7 +128,8 @@ struct LocOpenMsg : public LocMsg {
 LocApiBase::LocApiBase(const MsgTask* msgTask,
                        LOC_API_ADAPTER_EVENT_MASK_T excludedMask,
                        ContextBase* context) :
-    mExcludedMask(excludedMask), mMsgTask(msgTask), mMask(0), mContext(context)
+    mExcludedMask(excludedMask), mMsgTask(msgTask),
+    mMask(0), mSupportedMsg(0), mContext(context)
 {
     memset(mLocAdapters, 0, sizeof(mLocAdapters));
 }
@@ -203,6 +204,11 @@ void LocApiBase::removeAdapter(LocAdapterBase* adapter)
     }
 }
 
+void LocApiBase::updateEvtMask()
+{
+    mMsgTask->sendMsg(new LocOpenMsg(this, getEvtMask()));
+}
+
 void LocApiBase::handleEngineUpEvent()
 {
     // This will take care of renegotiating the loc handle
@@ -226,6 +232,17 @@ void LocApiBase::reportPosition(UlpLocation &location,
                                 enum loc_sess_status status,
                                 LocPosTechMask loc_technology_mask)
 {
+    // print the location info before delivering
+    LOC_LOGV("flags: %d\n  source: %d\n  latitude: %f\n  longitude: %f\n  "
+             "altitude: %f\n  speed: %f\n  bearing: %f\n  accuracy: %f\n  "
+             "timestamp: %lld\n  rawDataSize: %d\n  rawData: %p\n  "
+             "Session status: %d\n Technology mask: %u",
+             location.gpsLocation.flags, location.position_source,
+             location.gpsLocation.latitude, location.gpsLocation.longitude,
+             location.gpsLocation.altitude, location.gpsLocation.speed,
+             location.gpsLocation.bearing, location.gpsLocation.accuracy,
+             location.gpsLocation.timestamp, location.rawDataSize,
+             location.rawData, status, loc_technology_mask);
     // loop through adapters, and deliver to all adapters.
     TO_ALL_LOCADAPTERS(
         mLocAdapters[i]->reportPosition(location,
@@ -240,6 +257,19 @@ void LocApiBase::reportSv(GpsSvStatus &svStatus,
                   GpsLocationExtended &locationExtended,
                   void* svExt)
 {
+    // print the SV info before delivering
+    LOC_LOGV("num sv: %d\n  ephemeris mask: %dxn  almanac mask: %x\n  used"
+             " in fix mask: %x\n      sv: prn         snr       elevation      azimuth",
+             svStatus.num_svs, svStatus.ephemeris_mask,
+             svStatus.almanac_mask, svStatus.used_in_fix_mask);
+    for (int i = 0; i < svStatus.num_svs && i < GPS_MAX_SVS; i++) {
+        LOC_LOGV("   %d:   %d    %f    %f    %f",
+                 i,
+                 svStatus.sv_list[i].prn,
+                 svStatus.sv_list[i].snr,
+                 svStatus.sv_list[i].elevation,
+                 svStatus.sv_list[i].azimuth);
+    }
     // loop through adapters, and deliver to all adapters.
     TO_ALL_LOCADAPTERS(
         mLocAdapters[i]->reportSv(svStatus,
@@ -320,6 +350,11 @@ void LocApiBase::requestNiNotify(GpsNiNotification &notify, const void* data)
 {
     // loop through adapters, and deliver to the first handling adapter.
     TO_1ST_HANDLING_LOCADAPTERS(mLocAdapters[i]->requestNiNotify(notify, data));
+}
+
+void LocApiBase::saveSupportedMsgList(uint64_t supportedMsgList)
+{
+    mSupportedMsg = supportedMsgList;
 }
 
 void* LocApiBase :: getSibling()
@@ -493,6 +528,10 @@ DEFAULT_IMPL()
 int LocApiBase::
     getGpsLock()
 DEFAULT_IMPL(-1)
+
+enum loc_api_adapter_err LocApiBase::
+    setXtraVersionCheck(enum xtra_version_check check)
+DEFAULT_IMPL(LOC_API_ADAPTER_ERR_SUCCESS)
 
 int LocApiBase::
     updateRegistrationMask(LOC_API_ADAPTER_EVENT_MASK_T event,

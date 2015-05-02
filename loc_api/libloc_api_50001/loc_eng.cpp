@@ -44,7 +44,7 @@
 #include <sys/time.h>
 #include <netdb.h>
 #include <time.h>
-
+#include <new>
 #include <LocEngAdapter.h>
 
 #include <cutils/sched_policy.h>
@@ -84,6 +84,8 @@
 #define SAP_CONF_FILE            "/etc/sap.conf"
 #endif
 
+#define XTRA1_GPSONEXTRA         "xtra1.gpsonextra.net"
+
 using namespace loc_core;
 
 boolean configAlreadyRead = false;
@@ -99,10 +101,16 @@ static loc_param_s_type gps_conf_table[] =
   {"LPP_PROFILE",                    &gps_conf.LPP_PROFILE,                    NULL, 'n'},
   {"A_GLONASS_POS_PROTOCOL_SELECT",  &gps_conf.A_GLONASS_POS_PROTOCOL_SELECT,  NULL, 'n'},
   {"AGPS_CERT_WRITABLE_MASK",        &gps_conf.AGPS_CERT_WRITABLE_MASK,        NULL, 'n'},
+  {"SUPL_MODE",                      &gps_conf.SUPL_MODE,                      NULL, 'n'},
   {"INTERMEDIATE_POS",               &gps_conf.INTERMEDIATE_POS,               NULL, 'n'},
   {"ACCURACY_THRES",                 &gps_conf.ACCURACY_THRES,                 NULL, 'n'},
   {"NMEA_PROVIDER",                  &gps_conf.NMEA_PROVIDER,                  NULL, 'n'},
   {"CAPABILITIES",                   &gps_conf.CAPABILITIES,                   NULL, 'n'},
+  {"XTRA_VERSION_CHECK",             &gps_conf.XTRA_VERSION_CHECK,             NULL, 'n'},
+  {"XTRA_SERVER_1",                  &gps_conf.XTRA_SERVER_1,                  NULL, 's'},
+  {"XTRA_SERVER_2",                  &gps_conf.XTRA_SERVER_2,                  NULL, 's'},
+  {"XTRA_SERVER_3",                  &gps_conf.XTRA_SERVER_3,                  NULL, 's'},
+  {"USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL",  &gps_conf.USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL,          NULL, 'n'},
 };
 
 static loc_param_s_type sap_conf_table[] =
@@ -123,19 +131,29 @@ static loc_param_s_type sap_conf_table[] =
   {"SENSOR_CONTROL_MODE",            &sap_conf.SENSOR_CONTROL_MODE,            NULL, 'n'},
   {"SENSOR_USAGE",                   &sap_conf.SENSOR_USAGE,                   NULL, 'n'},
   {"SENSOR_ALGORITHM_CONFIG_MASK",   &sap_conf.SENSOR_ALGORITHM_CONFIG_MASK,   NULL, 'n'},
-  {"SENSOR_PROVIDER",                &sap_conf.SENSOR_PROVIDER,                NULL, 'n'},
+  {"SENSOR_PROVIDER",                &sap_conf.SENSOR_PROVIDER,                NULL, 'n'}
 };
 
 static void loc_default_parameters(void)
 {
-   /* defaults */
+   /*Defaults for gps.conf*/
    gps_conf.INTERMEDIATE_POS = 0;
    gps_conf.ACCURACY_THRES = 0;
    gps_conf.NMEA_PROVIDER = 0;
    gps_conf.GPS_LOCK = 0;
    gps_conf.SUPL_VER = 0x10000;
+   gps_conf.SUPL_MODE = 0x3;
    gps_conf.CAPABILITIES = 0x7;
+   /* LTE Positioning Profile configuration is disable by default*/
+   gps_conf.LPP_PROFILE = 0;
+   /*By default no positioning protocol is selected on A-GLONASS system*/
+   gps_conf.A_GLONASS_POS_PROTOCOL_SELECT = 0;
+   /*XTRA version check is disabled by default*/
+   gps_conf.XTRA_VERSION_CHECK=0;
+   /*Use emergency PDN by default*/
+   gps_conf.USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL = 1;
 
+   /*Defaults for sap.conf*/
    sap_conf.GYRO_BIAS_RANDOM_WALK = 0;
    sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC = 2;
    sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH = 5;
@@ -148,26 +166,17 @@ static void loc_default_parameters(void)
    sap_conf.SENSOR_CONTROL_MODE = 0; /* AUTO */
    sap_conf.SENSOR_USAGE = 0; /* Enabled */
    sap_conf.SENSOR_ALGORITHM_CONFIG_MASK = 0; /* INS Disabled = FALSE*/
-
    /* Values MUST be set by OEMs in configuration for sensor-assisted
       navigation to work. There are NO default values */
    sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY = 0;
    sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY = 0;
    sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY = 0;
    sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY = 0;
-
    sap_conf.GYRO_BIAS_RANDOM_WALK_VALID = 0;
    sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
    sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
    sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
    sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID = 0;
-
-      /* LTE Positioning Profile configuration is disable by default*/
-   gps_conf.LPP_PROFILE = 0;
-
-   /*By default no positioning protocol is selected on A-GLONASS system*/
-   gps_conf.A_GLONASS_POS_PROTOCOL_SELECT = 0;
-
    /* default provider is SSC */
    sap_conf.SENSOR_PROVIDER = 1;
 
@@ -506,6 +515,24 @@ struct LocEngSuplVer : public LocMsg {
     }
 };
 
+struct LocEngSuplMode : public LocMsg {
+    UlpProxyBase* mUlp;
+
+    inline LocEngSuplMode(UlpProxyBase* ulp) :
+        LocMsg(), mUlp(ulp)
+    {
+        locallog();
+    }
+    inline virtual void proc() const {
+        mUlp->setCapabilities(getCarrierCapabilities());
+    }
+    inline  void locallog() const {
+    }
+    inline virtual void log() const {
+        locallog();
+    }
+};
+
 //        case LOC_ENG_MSG_LPP_CONFIG:
 struct LocEngLppConfig : public LocMsg {
     LocEngAdapter* mAdapter;
@@ -811,16 +838,7 @@ void LocEngReportPosition::proc() const {
     }
 }
 void LocEngReportPosition::locallog() const {
-    LOC_LOGV("flags: %d\n  source: %d\n  latitude: %f\n  longitude: %f\n  "
-             "altitude: %f\n  speed: %f\n  bearing: %f\n  accuracy: %f\n  "
-             "timestamp: %lld\n  rawDataSize: %d\n  rawData: %p\n  Session"
-             " status: %d\n Technology mask: %u",
-             mLocation.gpsLocation.flags, mLocation.position_source,
-             mLocation.gpsLocation.latitude, mLocation.gpsLocation.longitude,
-             mLocation.gpsLocation.altitude, mLocation.gpsLocation.speed,
-             mLocation.gpsLocation.bearing, mLocation.gpsLocation.accuracy,
-             mLocation.gpsLocation.timestamp, mLocation.rawDataSize,
-             mLocation.rawData, mStatus, mTechMask);
+    LOC_LOGV("LocEngReportPosition");
 }
 void LocEngReportPosition::log() const {
     locallog();
@@ -861,19 +879,7 @@ void LocEngReportSv::proc() const {
     }
 }
 void LocEngReportSv::locallog() const {
-    LOC_LOGV("num sv: %d\n  ephemeris mask: %dxn  almanac mask: %x\n  "
-             "used in fix mask: %x\n      sv: prn         snr       "
-             "elevation      azimuth",
-             mSvStatus.num_svs, mSvStatus.ephemeris_mask,
-             mSvStatus.almanac_mask, mSvStatus.used_in_fix_mask);
-    for (int i = 0; i < mSvStatus.num_svs && i < GPS_MAX_SVS; i++) {
-        LOC_LOGV("   %d:   %d    %f    %f    %f\n  ",
-                 i,
-                 mSvStatus.sv_list[i].prn,
-                 mSvStatus.sv_list[i].snr,
-                 mSvStatus.sv_list[i].elevation,
-                 mSvStatus.sv_list[i].azimuth);
-    }
+    LOC_LOGV("%s:%d] LocEngReportSv",__func__, __LINE__);
 }
 inline void LocEngReportSv::log() const {
     locallog();
@@ -939,12 +945,34 @@ LocEngReportXtraServer::LocEngReportXtraServer(void* locEng,
     LocMsg(), mLocEng(locEng), mMaxLen(maxlength),
     mServers(new char[3*(mMaxLen+1)])
 {
+    char * cptr = mServers;
     memset(mServers, 0, 3*(mMaxLen+1));
-    strlcpy(mServers, url1, mMaxLen);
-    strlcpy(&(mServers[mMaxLen+1]), url2, mMaxLen);
-    strlcpy(&(mServers[(mMaxLen+1)<<1]), url3, mMaxLen);
+
+    // Override modem URLs with uncommented gps.conf urls
+    if( gps_conf.XTRA_SERVER_1[0] != '\0' ) {
+        url1 = &gps_conf.XTRA_SERVER_1[0];
+    }
+    if( gps_conf.XTRA_SERVER_2[0] != '\0' ) {
+        url2 = &gps_conf.XTRA_SERVER_2[0];
+    }
+    if( gps_conf.XTRA_SERVER_3[0] != '\0' ) {
+        url3 = &gps_conf.XTRA_SERVER_3[0];
+    }
+    // copy non xtra1.gpsonextra.net URLs into the forwarding buffer.
+    if( NULL == strcasestr(url1, XTRA1_GPSONEXTRA) ) {
+        strlcpy(cptr, url1, mMaxLen + 1);
+        cptr += mMaxLen + 1;
+    }
+    if( NULL == strcasestr(url2, XTRA1_GPSONEXTRA) ) {
+        strlcpy(cptr, url2, mMaxLen + 1);
+        cptr += mMaxLen + 1;
+    }
+    if( NULL == strcasestr(url3, XTRA1_GPSONEXTRA) ) {
+        strlcpy(cptr, url3, mMaxLen + 1);
+    }
     locallog();
 }
+
 void LocEngReportXtraServer::proc() const {
     loc_eng_xtra_data_s_type* locEngXtra =
         &(((loc_eng_data_s_type*)mLocEng)->xtra_module_data);
@@ -1088,7 +1116,17 @@ void LocEngRequestSuplEs::proc() const {
         AgpsStateMachine* sm = locEng->ds_nif;
         DSSubscriber s(sm, mID);
         sm->subscribeRsrc((Subscriber*)&s);
-    } else {
+    }
+    else if (locEng->agnss_nif) {
+        AgpsStateMachine *sm = locEng->agnss_nif;
+        ATLSubscriber s(mID,
+                        sm,
+                        locEng->adapter,
+                        false);
+        sm->subscribeRsrc((Subscriber*)&s);
+        LOC_LOGD("%s:%d]: Using regular ATL for SUPL ES", __func__, __LINE__);
+    }
+    else {
         locEng->adapter->atlOpenStatus(mID, 0, NULL, -1, -1);
     }
 }
@@ -1656,7 +1694,7 @@ inline void LocEngReportGpsMeasurement::log() const {
 }
 
 /*********************************************************************
-* Initialization checking macros
+ * Initialization checking macros
  *********************************************************************/
 #define STATE_CHECK(ctx, x, ret) \
     if (!(ctx))                  \
@@ -1667,6 +1705,24 @@ inline void LocEngReportGpsMeasurement::log() const {
       ret;                                                        \
   }
 #define INIT_CHECK(ctx, ret) STATE_CHECK(ctx, "instance not initialized", ret)
+
+uint32_t getCarrierCapabilities() {
+    #define carrierMSA (uint32_t)0x2
+    #define carrierMSB (uint32_t)0x1
+    #define gpsConfMSA (uint32_t)0x4
+    #define gpsConfMSB (uint32_t)0x2
+    uint32_t capabilities = gps_conf.CAPABILITIES;
+    if ((gps_conf.SUPL_MODE & carrierMSA) != carrierMSA) {
+        capabilities &= ~gpsConfMSA;
+    }
+    if ((gps_conf.SUPL_MODE & carrierMSB) != carrierMSB) {
+        capabilities &= ~gpsConfMSB;
+    }
+
+    LOC_LOGV("getCarrierCapabilities: CAPABILITIES %x, SUPL_MODE %x, carrier capabilities %x",
+             gps_conf.CAPABILITIES, gps_conf.SUPL_MODE, capabilities);
+    return capabilities;
+}
 
 /*===========================================================================
 FUNCTION    loc_eng_init
@@ -1750,53 +1806,51 @@ static int loc_eng_reinit(loc_eng_data_s_type &loc_eng_data)
 {
     ENTRY_LOG();
     int ret_val = LOC_API_ADAPTER_ERR_SUCCESS;
+    LocEngAdapter* adapter = loc_eng_data.adapter;
 
-    if (LOC_API_ADAPTER_ERR_SUCCESS == ret_val) {
-        LOC_LOGD("loc_eng_reinit reinit() successful");
+    adapter->sendMsg(new LocEngGnssConstellationConfig(adapter));
+    adapter->sendMsg(new LocEngSuplVer(adapter, gps_conf.SUPL_VER));
+    adapter->sendMsg(new LocEngLppConfig(adapter, gps_conf.LPP_PROFILE));
+    adapter->sendMsg(new LocEngSensorControlConfig(adapter, sap_conf.SENSOR_USAGE,
+                                                   sap_conf.SENSOR_PROVIDER));
+    adapter->sendMsg(new LocEngAGlonassProtocol(adapter, gps_conf.A_GLONASS_POS_PROTOCOL_SELECT));
 
-        LocEngAdapter* adapter = loc_eng_data.adapter;
-        adapter->sendMsg(new LocEngGnssConstellationConfig(adapter));
-        adapter->sendMsg(new LocEngSuplVer(adapter, gps_conf.SUPL_VER));
-        adapter->sendMsg(new LocEngLppConfig(adapter, gps_conf.LPP_PROFILE));
-        adapter->sendMsg(new LocEngSensorControlConfig(adapter, sap_conf.SENSOR_USAGE,
-                                                       sap_conf.SENSOR_PROVIDER));
-        adapter->sendMsg(new LocEngAGlonassProtocol(adapter, gps_conf.A_GLONASS_POS_PROTOCOL_SELECT));
-
-        /* Make sure at least one of the sensor property is specified by the user in the gps.conf file. */
-        if( sap_conf.GYRO_BIAS_RANDOM_WALK_VALID ||
-            sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
-            sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
-            sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
-            sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID )
-        {
-            adapter->sendMsg(new LocEngSensorProperties(adapter,
-                                                        sap_conf.GYRO_BIAS_RANDOM_WALK_VALID,
-                                                        sap_conf.GYRO_BIAS_RANDOM_WALK,
-                                                        sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
-                                                        sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY,
-                                                        sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
-                                                        sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY,
-                                                        sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
-                                                        sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY,
-                                                        sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
-                                                        sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY));
-        }
-
-        adapter->sendMsg(new LocEngSensorPerfControlConfig(adapter,
-                                                           sap_conf.SENSOR_CONTROL_MODE,
-                                                           sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH,
-                                                           sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC,
-                                                           sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH,
-                                                           sap_conf.SENSOR_GYRO_BATCHES_PER_SEC,
-                                                           sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH,
-                                                           sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC_HIGH,
-                                                           sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH,
-                                                           sap_conf.SENSOR_GYRO_BATCHES_PER_SEC_HIGH,
-                                                           sap_conf.SENSOR_ALGORITHM_CONFIG_MASK));
-
-        adapter->sendMsg(new LocEngEnableData(adapter, NULL, 0, (agpsStatus ? 1:0)));
+    /* Make sure at least one of the sensor property is specified by the user in the gps.conf file. */
+    if( sap_conf.GYRO_BIAS_RANDOM_WALK_VALID ||
+        sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+        sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+        sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID ||
+        sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID ) {
+        adapter->sendMsg(new LocEngSensorProperties(adapter,
+                                                    sap_conf.GYRO_BIAS_RANDOM_WALK_VALID,
+                                                    sap_conf.GYRO_BIAS_RANDOM_WALK,
+                                                    sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                    sap_conf.ACCEL_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                    sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                    sap_conf.ANGLE_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                    sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                    sap_conf.RATE_RANDOM_WALK_SPECTRAL_DENSITY,
+                                                    sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY_VALID,
+                                                    sap_conf.VELOCITY_RANDOM_WALK_SPECTRAL_DENSITY));
     }
 
+    adapter->sendMsg(new LocEngSensorPerfControlConfig(adapter,
+                                                       sap_conf.SENSOR_CONTROL_MODE,
+                                                       sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH,
+                                                       sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC,
+                                                       sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH,
+                                                       sap_conf.SENSOR_GYRO_BATCHES_PER_SEC,
+                                                       sap_conf.SENSOR_ACCEL_SAMPLES_PER_BATCH_HIGH,
+                                                       sap_conf.SENSOR_ACCEL_BATCHES_PER_SEC_HIGH,
+                                                       sap_conf.SENSOR_GYRO_SAMPLES_PER_BATCH_HIGH,
+                                                       sap_conf.SENSOR_GYRO_BATCHES_PER_SEC_HIGH,
+                                                       sap_conf.SENSOR_ALGORITHM_CONFIG_MASK));
+
+    adapter->sendMsg(new LocEngEnableData(adapter, NULL, 0, (agpsStatus ? 1:0)));
+
+    loc_eng_xtra_version_check(loc_eng_data, gps_conf.XTRA_VERSION_CHECK);
+
+    LOC_LOGD("loc_eng_reinit reinit() successful");
     EXIT_LOG(%d, ret_val);
     return ret_val;
 }
@@ -1896,7 +1950,9 @@ static int loc_eng_start_handler(loc_eng_data_s_type &loc_eng_data)
        ret_val = loc_eng_data.adapter->startFix();
 
        if (ret_val == LOC_API_ADAPTER_ERR_SUCCESS ||
-           ret_val == LOC_API_ADAPTER_ERR_ENGINE_DOWN)
+           ret_val == LOC_API_ADAPTER_ERR_ENGINE_DOWN ||
+           ret_val == LOC_API_ADAPTER_ERR_PHONE_OFFLINE ||
+           ret_val == LOC_API_ADAPTER_ERR_INTERNAL)
        {
            loc_eng_data.adapter->setInSession(TRUE);
            loc_inform_gps_status(loc_eng_data, GPS_STATUS_SESSION_BEGIN);
@@ -2157,7 +2213,6 @@ static int loc_eng_get_zpp_handler(loc_eng_data_s_type &loc_eng_data)
    GpsLocationExtended locationExtended;
    memset(&locationExtended, 0, sizeof (GpsLocationExtended));
    locationExtended.size = sizeof(locationExtended);
-   memset(&location, 0, sizeof location);
 
    ret_val = loc_eng_data.adapter->getZpp(location.gpsLocation, tech_mask);
   //Mark the location source as from ZPP
@@ -2292,8 +2347,9 @@ void loc_eng_agps_init(loc_eng_data_s_type &loc_eng_data, AGpsExtCallbacks* call
                                                       false);
 
         if (adapter->mSupportsAgpsRequests) {
-            loc_eng_data.adapter->sendMsg(new LocEngDataClientInit(&loc_eng_data));
-
+            if(gps_conf.USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL) {
+                loc_eng_data.adapter->sendMsg(new LocEngDataClientInit(&loc_eng_data));
+            }
             loc_eng_dmn_conn_loc_api_server_launch(callbacks->create_thread_cb,
                                                    NULL, NULL, &loc_eng_data);
         }
@@ -2325,7 +2381,9 @@ getAgpsStateMachine(loc_eng_data_s_type &locEng, AGpsExtType agpsType) {
         break;
     }
     case AGPS_TYPE_SUPL_ES: {
-        stateMachine = locEng.ds_nif;
+        locEng.ds_nif ?
+            stateMachine = locEng.ds_nif:
+            stateMachine = locEng.agnss_nif;
         break;
     }
     default:
@@ -2562,29 +2620,29 @@ int loc_eng_set_server_proxy(loc_eng_data_s_type &loc_eng_data,
     ENTRY_LOG_CALLFLOW();
     int ret_val = 0;
 
-    LOC_LOGV("save the address, type: %d, hostname: %s, port: %d",
-             (int) type, hostname, port);
-    switch (type)
-    {
-    case LOC_AGPS_SUPL_SERVER:
-        strlcpy(loc_eng_data.supl_host_buf, hostname,
-                sizeof(loc_eng_data.supl_host_buf));
-        loc_eng_data.supl_port_buf = port;
-        loc_eng_data.supl_host_set = 1;
-        break;
-    case LOC_AGPS_CDMA_PDE_SERVER:
-        strlcpy(loc_eng_data.c2k_host_buf, hostname,
-                sizeof(loc_eng_data.c2k_host_buf));
-        loc_eng_data.c2k_port_buf = port;
-        loc_eng_data.c2k_host_set = 1;
-        break;
-    default:
-        LOC_LOGE("loc_eng_set_server_proxy, unknown server type = %d", (int) type);
-    }
-
     if (NULL != loc_eng_data.adapter)
     {
         ret_val = loc_eng_set_server(loc_eng_data, type, hostname, port);
+    } else {
+        LOC_LOGW("set_server called before init. save the address, type: %d, hostname: %s, port: %d",
+                 (int) type, hostname, port);
+        switch (type)
+        {
+        case LOC_AGPS_SUPL_SERVER:
+            strlcpy(loc_eng_data.supl_host_buf, hostname,
+                    sizeof(loc_eng_data.supl_host_buf));
+            loc_eng_data.supl_port_buf = port;
+            loc_eng_data.supl_host_set = 1;
+            break;
+        case LOC_AGPS_CDMA_PDE_SERVER:
+            strlcpy(loc_eng_data.c2k_host_buf, hostname,
+                    sizeof(loc_eng_data.c2k_host_buf));
+            loc_eng_data.c2k_port_buf = port;
+            loc_eng_data.c2k_host_set = 1;
+            break;
+        default:
+            LOC_LOGE("loc_eng_set_server_proxy, unknown server type = %d", (int) type);
+        }
     }
 
     EXIT_LOG(%d, ret_val);
@@ -2702,6 +2760,9 @@ void loc_eng_configuration_update (loc_eng_data_s_type &loc_eng_data,
             if (gps_conf_tmp.A_GLONASS_POS_PROTOCOL_SELECT != gps_conf.A_GLONASS_POS_PROTOCOL_SELECT) {
                 adapter->sendMsg(new LocEngAGlonassProtocol(adapter,
                                                             gps_conf.A_GLONASS_POS_PROTOCOL_SELECT));
+            }
+            if (gps_conf_tmp.SUPL_MODE != gps_conf.SUPL_MODE) {
+                adapter->sendMsg(new LocEngSuplMode(adapter->getUlpProxy()));
             }
         }
 

@@ -1,3 +1,4 @@
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -8,3 +9,4 @@ LOCAL_MODULE_PATH  := $(TARGET_OUT_ETC)/
 LOCAL_SRC_FILES := gps.conf
 
 include $(BUILD_PREBUILT)
+

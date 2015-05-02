@@ -329,9 +329,14 @@ int loc_update_conf(const char* conf_data, int32_t length,
     if (conf_data && length && config_table && table_length) {
         // make a copy, so we do not tokenize the original data
         char* conf_copy = (char*)malloc(length+1);
-        memcpy(conf_copy, conf_data, length);
-        // we hard NULL the end of string to be safe
-        conf_copy[length] = 0;
+
+        if(conf_copy !=NULL)
+        {
+          memcpy(conf_copy, conf_data, length);
+          // we hard NULL the end of string to be safe
+          conf_copy[length] = 0;
+        }
+
         // start with one record off
         uint32_t num_params = table_length - 1;
         char* saveptr = NULL;
@@ -375,7 +380,6 @@ void loc_read_conf(const char* conf_file_name, loc_param_s_type* config_table,
                    uint32_t table_length)
 {
     FILE *conf_fp = NULL;
-    char input_buf[LOC_MAX_PARAM_LINE];  /* declare a char array */
     char *lasts;
     loc_param_v_type config_value;
     uint32_t i;

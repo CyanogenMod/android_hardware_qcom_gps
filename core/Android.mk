@@ -10,6 +10,12 @@ LOCAL_MODULE_OWNER := qcom
 
 LOCAL_MODULE_TAGS := optional
 
+ifeq ($(TARGET_DEVICE),apq8026_lw)
+LOCAL_CFLAGS += -DPDK_FEATURE_SET
+else ifeq ($(BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET),true)
+LOCAL_CFLAGS += -DPDK_FEATURE_SET
+endif
+
 LOCAL_SHARED_LIBRARIES := \
     libutils \
     libcutils \
@@ -45,6 +51,7 @@ LOCAL_COPY_HEADERS:= \
     loc_core_log.h \
     LocAdapterProxyBase.h
 
+LOCAL_PRELINK_MODULE := false
 
 include $(BUILD_SHARED_LIBRARY)
 
