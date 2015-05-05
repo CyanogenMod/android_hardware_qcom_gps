@@ -12,13 +12,13 @@ else ifneq ($(filter msm8974 ,$(TARGET_BOARD_PLATFORM)),)
 else ifneq ($(filter msm8084 ,$(TARGET_BOARD_PLATFORM)),)
     #For msm8084 target
     include $(call all-named-subdir-makefiles,msm8084)
-else
+else ifeq ($(filter msm8916,$(TARGET_BOARD_PLATFORM)),)
     #For all other targets
     GPS_DIRS=core utils loc_api platform_lib_abstractions etc
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #TARGET_BOARD_PLATFORM
 
-else
+else ifeq ($(filter msm8916,$(TARGET_BOARD_PLATFORM)),)
     GPS_DIRS=core utils loc_api platform_lib_abstractions etc
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET
