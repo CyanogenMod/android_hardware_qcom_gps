@@ -95,7 +95,7 @@ LOCAL_C_INCLUDES:= \
     $(TARGET_OUT_HEADERS)/gps.utils \
     $(TARGET_OUT_HEADERS)/libloc_core
 
-ifeq ($(filter $(TARGET_DEVICE), apq8064 msm8960),)
+ifeq ($(filter $(TARGET_BOARD_PLATFORM), apq8064 msm8960),)
 $(call print-vars, $(TARGET_DEVICE))
 LOCAL_SHARED_LIBRARIES += \
     libmdmdetect \
