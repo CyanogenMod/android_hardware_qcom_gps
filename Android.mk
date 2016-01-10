@@ -1,4 +1,4 @@
-ifneq ($(USE_DEVICE_SPECIFIC_GPS),true)
+ifeq ($(call my-dir),$(call project-path-for,qcom-gps))
 
 ifneq (,$(filter $(QCOM_BOARD_PLATFORMS),$(TARGET_BOARD_PLATFORM)))
 
