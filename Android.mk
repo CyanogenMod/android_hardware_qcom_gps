@@ -17,7 +17,10 @@ else ifeq ($(filter msm8916,$(TARGET_BOARD_PLATFORM)),)
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #TARGET_BOARD_PLATFORM
 
-else ifeq ($(filter msm8916,$(TARGET_BOARD_PLATFORM)),)
+else ifneq ($(filter msm8909 ,$(TARGET_BOARD_PLATFORM)),)
+    #For msm8909 target
+    include $(call all-named-subdir-makefiles,msm8909)
+else ifeq ($(filter msm8916 ,$(TARGET_BOARD_PLATFORM)),)
     GPS_DIRS=core utils loc_api platform_lib_abstractions etc
     include $(call all-named-subdir-makefiles,$(GPS_DIRS))
 endif #BOARD_VENDOR_QCOM_LOC_PDK_FEATURE_SET
