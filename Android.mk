@@ -14,7 +14,7 @@ ifneq ($(TARGET_BOARD_AUTO),true)
       else ifneq ($(filter msm8084 ,$(TARGET_BOARD_PLATFORM)),)
         #For msm8084 target
         include $(call all-named-subdir-makefiles,msm8084)
-      else ifneq ($(filter msm8992 msm994 ,$(TARGET_BOARD_PLATFORM)),)
+      else ifneq ($(filter msm8992 msm8994 ,$(TARGET_BOARD_PLATFORM)),)
         #For msm8992/msm8994 targets
         include $(call all-named-subdir-makefiles,msm8994)
       else ifneq ($(filter msm8996 ,$(TARGET_BOARD_PLATFORM)),)
