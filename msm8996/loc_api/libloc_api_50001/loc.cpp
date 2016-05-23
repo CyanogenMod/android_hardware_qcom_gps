@@ -318,7 +318,6 @@ static int loc_init(GpsCallbacks* callbacks)
     loc_afw_data.adapter->mSupportsTimeInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
     loc_afw_data.adapter->setGpsLockMsg(0);
     loc_afw_data.adapter->requestUlp(getCarrierCapabilities());
-    loc_afw_data.adapter->setXtraUserAgent();
 
     if(retVal) {
         LOC_LOGE("loc_eng_init() fail!");
@@ -541,7 +540,10 @@ SIDE EFFECTS
 static void loc_delete_aiding_data(GpsAidingData f)
 {
     ENTRY_LOG();
+
+#ifndef TARGET_BUILD_VARIANT_USER
     loc_eng_delete_aiding_data(loc_afw_data, f);
+#endif
 
     EXIT_LOG(%s, VOID_RET);
 }

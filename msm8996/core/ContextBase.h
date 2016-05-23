@@ -63,9 +63,6 @@ public:
                            unsigned long capabilities) {
         mLBSProxy->requestUlp(adapter, capabilities);
     }
-    inline IzatDevId_t getIzatDevId() const {
-        return mLBSProxy->getIzatDevId();
-    }
     inline void sendMsg(const LocMsg *msg) { getMsgTask()->sendMsg(msg); }
 };
 
