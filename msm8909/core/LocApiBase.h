@@ -214,9 +214,9 @@ public:
     virtual void installAGpsCert(const DerEncodedCertificate* pData,
                                  size_t length,
                                  uint32_t slotBitMask);
-    inline virtual void setInSession(bool inSession) {}
+    inline virtual void setInSession(bool /* inSession */) {}
     inline bool isMessageSupported (LocCheckingMessagesID msgID) const {
-        if (msgID > (sizeof(mSupportedMsg) << 3)) {
+        if (msgID > LOC_API_ADAPTER_MESSAGE_MAX) {
             return false;
         } else {
             uint32_t messageChecker = 1 << msgID;

@@ -194,7 +194,7 @@ void LocEngAdapter::setXtraUserAgent() {
                 fclose(file);
 
                 // remove trailing spaces
-                size_t len = strlen(buf);
+                int len = strlen(buf);
                 while (--len >= 0 && isspace(buf[len])) {
                     buf[len] = '\0';
                 }

@@ -1030,7 +1030,7 @@ static int loc_agps_revoke_certificates(const Sha1CertificateFingerprint* finger
                                         size_t length)
 {
     ENTRY_LOG();
-    LOC_LOGE("%s:%d]: agps_revoke_certificates not supported");
+    LOC_LOGE("%s:%d]: agps_revoke_certificates not supported",__func__, __LINE__);
     int ret_val = AGPS_CERTIFICATE_ERROR_GENERIC;
     EXIT_LOG(%d, ret_val);
     return ret_val;
