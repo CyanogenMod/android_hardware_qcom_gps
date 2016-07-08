@@ -55,6 +55,7 @@ public:
     inline virtual bool hasCPIExtendedCapabilities() const { return false; }
     inline virtual void modemPowerVote(bool power) const {}
     virtual void injectFeatureConfig(ContextBase* context) const {}
+    inline virtual bool hasNativeXtraClient() const { return false; }
 };
 
 typedef LBSProxyBase* (getLBSProxy_t)();
