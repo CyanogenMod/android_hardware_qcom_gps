@@ -118,6 +118,8 @@ public:
     void reportSv(GnssSvStatus &svStatus,
                   GpsLocationExtended &locationExtended,
                   void* svExt);
+    void reportSvMeasurement(GnssSvMeasurementSet &svMeasurementSet);
+    void reportSvPolynomial(GnssSvPolynomial &svPolynomial);
     void reportStatus(GpsStatusValue status);
     void reportNmea(const char* nmea, int length);
     void reportXtraServer(const char* url1, const char* url2,
@@ -203,8 +205,6 @@ public:
                                int gyroBatchesPerSecHigh,
                                int algorithmConfig);
     virtual enum loc_api_adapter_err
-        setExtPowerConfig(int isBatteryCharging);
-    virtual enum loc_api_adapter_err
         setAGLONASSProtocol(unsigned long aGlonassProtocol);
     virtual enum loc_api_adapter_err
         setLPPeProtocol(unsigned long lppeCP, unsigned long lppeUP);
@@ -254,11 +254,6 @@ public:
 
     virtual enum loc_api_adapter_err setXtraVersionCheck(enum xtra_version_check check);
 
-    /*
-      Update gps reporting events
-     */
-    virtual int updateRegistrationMask(LOC_API_ADAPTER_EVENT_MASK_T event,
-                                       loc_registration_mask_status isEnabled);
     /*
       Check if the modem support the service
      */

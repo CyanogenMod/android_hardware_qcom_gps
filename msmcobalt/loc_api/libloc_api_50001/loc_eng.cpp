@@ -101,6 +101,7 @@ static const loc_param_s_type gps_conf_table[] =
   {"XTRA_SERVER_3",                  &gps_conf.XTRA_SERVER_3,                  NULL, 's'},
   {"USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL",  &gps_conf.USE_EMERGENCY_PDN_FOR_EMERGENCY_SUPL,          NULL, 'n'},
   {"AGPS_CONFIG_INJECT",             &gps_conf.AGPS_CONFIG_INJECT,             NULL, 'n'},
+  {"EXTERNAL_DR_ENABLED",            &gps_conf.EXTERNAL_DR_ENABLED,                  NULL, 'n'},
 };
 
 static const loc_param_s_type sap_conf_table[] =
@@ -750,29 +751,6 @@ struct LocEngSensorPerfControlConfig : public LocMsg {
                  mAccelSamplesPerBatchHigh, mAccelBatchesPerSecHigh,
                  mGyroSamplesPerBatchHigh, mGyroBatchesPerSecHigh,
                  mAlgorithmConfig);
-    }
-    inline virtual void log() const {
-        locallog();
-    }
-};
-
-//        case LOC_ENG_MSG_EXT_POWER_CONFIG:
-struct LocEngExtPowerConfig : public LocMsg {
-    LocEngAdapter* mAdapter;
-    const int mIsBatteryCharging;
-    inline LocEngExtPowerConfig(LocEngAdapter* adapter,
-                                int isBatteryCharging) :
-        LocMsg(), mAdapter(adapter),
-        mIsBatteryCharging(isBatteryCharging)
-    {
-        locallog();
-    }
-    inline virtual void proc() const {
-        mAdapter->setExtPowerConfig(mIsBatteryCharging);
-    }
-    inline void locallog() const {
-        LOC_LOGV("LocEngExtPowerConfig - isBatteryCharging: %d",
-                 mIsBatteryCharging);
     }
     inline virtual void log() const {
         locallog();
@@ -1665,29 +1643,6 @@ struct LocEngInstallAGpsCert : public LocMsg {
     }
 };
 
-struct LocEngUpdateRegistrationMask : public LocMsg {
-    loc_eng_data_s_type* mLocEng;
-    LOC_API_ADAPTER_EVENT_MASK_T mMask;
-    loc_registration_mask_status mIsEnabled;
-    inline LocEngUpdateRegistrationMask(loc_eng_data_s_type* locEng,
-                                        LOC_API_ADAPTER_EVENT_MASK_T mask,
-                                        loc_registration_mask_status isEnabled) :
-        LocMsg(), mLocEng(locEng), mMask(mask), mIsEnabled(isEnabled) {
-        locallog();
-    }
-    inline virtual void proc() const {
-        loc_eng_data_s_type *locEng = (loc_eng_data_s_type *)mLocEng;
-        locEng->adapter->updateRegistrationMask(mMask,
-                                                mIsEnabled);
-    }
-    void locallog() const {
-        LOC_LOGV("LocEngUpdateRegistrationMask\n");
-    }
-    virtual void log() const {
-        locallog();
-    }
-};
-
 struct LocEngGnssConstellationConfig : public LocMsg {
     LocEngAdapter* mAdapter;
     inline LocEngGnssConstellationConfig(LocEngAdapter* adapter) :
@@ -2069,7 +2024,6 @@ static int loc_eng_stop_handler(loc_eng_data_s_type &loc_eng_data)
    int ret_val = LOC_API_ADAPTER_ERR_SUCCESS;
 
    if (loc_eng_data.adapter->isInSession()) {
-
        ret_val = loc_eng_data.adapter->stopFix();
        loc_eng_data.adapter->setInSession(FALSE);
    }
@@ -2229,6 +2183,9 @@ void loc_eng_delete_aiding_data(loc_eng_data_s_type &loc_eng_data, GpsAidingData
 {
     ENTRY_LOG_CALLFLOW();
     INIT_CHECK(loc_eng_data.adapter, return);
+
+    //report delete aiding data to ULP to send to DRPlugin
+    loc_eng_data.adapter->getUlpProxy()->reportDeleteAidingData(f);
 
     loc_eng_data.adapter->sendMsg(new LocEngDelAidData(&loc_eng_data, f));
 
@@ -2975,8 +2932,9 @@ void loc_eng_handle_engine_up(loc_eng_data_s_type &loc_eng_data)
     if (loc_eng_data.adapter->isInSession()) {
         // This sets the copy in adapter to modem
         loc_eng_data.adapter->setInSession(false);
-        loc_eng_data.adapter->sendMsg(new LocEngStartFix(loc_eng_data.adapter));
+        loc_eng_start_handler(loc_eng_data);
     }
+
     EXIT_LOG(%s, VOID_RET);
 }
 
@@ -3049,10 +3007,7 @@ int loc_eng_gps_measurement_init(loc_eng_data_s_type &loc_eng_data,
 
     // updated the mask
     LOC_API_ADAPTER_EVENT_MASK_T event = LOC_API_ADAPTER_BIT_GNSS_MEASUREMENT;
-    loc_eng_data.adapter->sendMsg(new LocEngUpdateRegistrationMask(
-                                                        &loc_eng_data,
-                                                        event,
-                                                        LOC_REGISTRATION_MASK_ENABLED));
+    loc_eng_data.adapter->updateEvtMask(event, LOC_REGISTRATION_MASK_ENABLED);
     // set up the callback
     loc_eng_data.gnss_measurement_cb = callbacks->gnss_measurement_callback;
     LOC_LOGD ("%s, event masks updated successfully", __func__);
@@ -3084,10 +3039,7 @@ void loc_eng_gps_measurement_close(loc_eng_data_s_type &loc_eng_data)
 
     // updated the mask
     LOC_API_ADAPTER_EVENT_MASK_T event = LOC_API_ADAPTER_BIT_GNSS_MEASUREMENT;
-    loc_eng_data.adapter->sendMsg(new LocEngUpdateRegistrationMask(
-                                                          &loc_eng_data,
-                                                          event,
-                                                          LOC_REGISTRATION_MASK_DISABLED));
+    loc_eng_data.adapter->updateEvtMask(event, LOC_REGISTRATION_MASK_DISABLED);
     // set up the callback
     loc_eng_data.gnss_measurement_cb = NULL;
     EXIT_LOG(%d, 0);

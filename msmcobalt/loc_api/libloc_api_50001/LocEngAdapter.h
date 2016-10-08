@@ -230,11 +230,6 @@ public:
                                                   algorithmConfig);
     }
     inline virtual enum loc_api_adapter_err
-        setExtPowerConfig(int isBatteryCharging)
-    {
-        return mLocApi->setExtPowerConfig(isBatteryCharging);
-    }
-    inline virtual enum loc_api_adapter_err
         setAGLONASSProtocol(unsigned long aGlonassProtocol)
     {
         return mLocApi->setAGLONASSProtocol(aGlonassProtocol);
@@ -285,6 +280,8 @@ public:
     virtual void reportSv(GnssSvStatus &svStatus,
                           GpsLocationExtended &locationExtended,
                           void* svExt);
+    virtual void reportSvMeasurement(GnssSvMeasurementSet &svMeasurementSet);
+    virtual void reportSvPolynomial(GnssSvPolynomial &svPolynomial);
     virtual void reportStatus(GpsStatusValue status);
     virtual void reportNmea(const char* nmea, int length);
     virtual bool reportXtraServer(const char* url1, const char* url2,
@@ -348,12 +345,6 @@ public:
     {
         return mLocApi->getGpsLock();
     }
-
-    /*
-      Update Registration Mask
-     */
-    void updateRegistrationMask(LOC_API_ADAPTER_EVENT_MASK_T event,
-                                loc_registration_mask_status isEnabled);
 
     /*
       Set Gnss Constellation Config

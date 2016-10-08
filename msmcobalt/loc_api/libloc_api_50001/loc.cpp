@@ -44,6 +44,7 @@
 #include <errno.h>
 #include <LocDualContext.h>
 #include <platform_lib_includes.h>
+#include <cutils/properties.h>
 
 using namespace loc_core;
 
@@ -282,6 +283,7 @@ SIDE EFFECTS
 static int loc_init(GpsCallbacks* callbacks)
 {
     int retVal = -1;
+    unsigned int target = (unsigned int) -1;
     ENTRY_LOG();
     LOC_API_ADAPTER_EVENT_MASK_T event;
 
@@ -300,6 +302,17 @@ static int loc_init(GpsCallbacks* callbacks)
             LOC_API_ADAPTER_BIT_STATUS_REPORT |
             LOC_API_ADAPTER_BIT_NMEA_1HZ_REPORT |
             LOC_API_ADAPTER_BIT_NI_NOTIFY_VERIFY_REQUEST;
+
+    target = loc_get_target();
+
+    /* If platform is "auto" and external dr enabled then enable
+    ** Measurement report and SV Polynomial report
+    */
+    if((1 == gps_conf.EXTERNAL_DR_ENABLED))
+    {
+        event |= LOC_API_ADAPTER_BIT_GNSS_MEASUREMENT_REPORT |
+                LOC_API_ADAPTER_BIT_GNSS_SV_POLYNOMIAL_REPORT;
+    }
 
     LocCallbacks clientCallbacks = {local_loc_cb, /* location_cb */
                                     callbacks->status_cb, /* status_cb */
@@ -322,7 +335,8 @@ static int loc_init(GpsCallbacks* callbacks)
     retVal = loc_eng_init(loc_afw_data, &clientCallbacks, event, NULL);
     loc_afw_data.adapter->mSupportsAgpsRequests = !loc_afw_data.adapter->hasAgpsExtendedCapabilities();
     loc_afw_data.adapter->mSupportsPositionInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
-    loc_afw_data.adapter->mSupportsTimeInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
+    loc_afw_data.adapter->mSupportsTimeInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities()
+                                                   && !loc_afw_data.adapter->hasNativeXtraClient();
     loc_afw_data.adapter->setGpsLockMsg(0);
     loc_afw_data.adapter->requestUlp(ContextBase::getCarrierCapabilities());
     loc_afw_data.adapter->setXtraUserAgent();
@@ -460,8 +474,12 @@ static int  loc_set_position_mode(GpsPositionMode mode,
         break;
     }
 
+    // set position sharing option to true
+    bool sharePosition = true;
+
     LocPosMode params(locMode, recurrence, min_interval,
-                      preferred_accuracy, preferred_time, NULL, NULL);
+                      preferred_accuracy, preferred_time,
+                      sharePosition, NULL, NULL);
     ret_val = loc_eng_set_position_mode(loc_afw_data, params);
 
     EXIT_LOG(%d, ret_val);
@@ -578,10 +596,14 @@ const GpsGeofencingInterface* get_geofence_interface(void)
     }
     dlerror();    /* Clear any existing error */
     get_gps_geofence_interface = (get_gps_geofence_interface_function)dlsym(handle, "gps_geofence_get_interface");
-    if ((error = dlerror()) != NULL || NULL == get_gps_geofence_interface)  {
+    if ((error = dlerror()) != NULL)  {
         LOC_LOGE ("%s, dlsym for get_gps_geofence_interface failed, error = %s\n", __func__, error);
         goto exit;
-     }
+    }
+    if (NULL == get_gps_geofence_interface)  {
+        LOC_LOGE ("%s, get_gps_geofence_interface is NULL\n", __func__);
+        goto exit;
+    }
 
     geofence_interface = get_gps_geofence_interface();
 
