@@ -29,16 +29,10 @@
 #define LOG_NDDEBUG 0
 #define LOG_TAG "LocSvc_EngAdapter"
 
-#include <sys/stat.h>
-#include <errno.h>
-#include <ctype.h>
 #include <cutils/properties.h>
 #include <LocEngAdapter.h>
 #include "loc_eng_msg.h"
 #include "loc_log.h"
-
-#define CHIPSET_SERIAL_NUMBER_MAX_LEN 16
-#define USER_AGENT_MAX_LEN 512
 
 using namespace loc_core;
 
@@ -89,173 +83,6 @@ LocEngAdapter::~LocEngAdapter()
 {
     delete mInternalAdapter;
     LOC_LOGV("LocEngAdapter deleted");
-}
-
-void LocEngAdapter::setXtraUserAgent() {
-    struct LocSetXtraUserAgent : public LocMsg {
-        const ContextBase* const mContext;
-        inline LocSetXtraUserAgent(ContextBase* context) :
-            LocMsg(), mContext(context) {
-        }
-        virtual void proc() const {
-            char release[PROPERTY_VALUE_MAX];
-            char manufacture[PROPERTY_VALUE_MAX];
-            char model[PROPERTY_VALUE_MAX];
-            char board[PROPERTY_VALUE_MAX];
-            char brand[PROPERTY_VALUE_MAX];
-            char chipsetsn[CHIPSET_SERIAL_NUMBER_MAX_LEN];
-            char userAgent[USER_AGENT_MAX_LEN];
-            const char defVal[] = "-";
-
-            property_get("ro.build.version.release", release,     defVal);
-            property_get("ro.product.manufacturer",  manufacture, defVal);
-            property_get("ro.product.model", model,   defVal);
-            property_get("ro.product.board", board,   defVal);
-            property_get("ro.product.brand", brand,   defVal);
-            getChipsetSerialNo(chipsetsn, sizeof(chipsetsn), defVal);
-
-            encodeInPlace(release, PROPERTY_VALUE_MAX);
-            encodeInPlace(manufacture, PROPERTY_VALUE_MAX);
-            encodeInPlace(model, PROPERTY_VALUE_MAX);
-            encodeInPlace(board, PROPERTY_VALUE_MAX);
-            encodeInPlace(brand, PROPERTY_VALUE_MAX);
-
-            snprintf(userAgent, sizeof(userAgent), "A/%s/%s/%s/%s/-/QCX3/s%u/-/%s/-/%s/-/-/-",
-                     release, manufacture, model, board,
-                     mContext->getIzatDevId(), chipsetsn, brand);
-
-            for (int i = 0; i < sizeof(userAgent) && userAgent[i]; i++) {
-                if (' ' == userAgent[i]) userAgent[i] = '#';
-            }
-
-            saveUserAgentString(userAgent, strlen(userAgent));
-            LOC_LOGV("%s] UserAgent %s", __func__, userAgent);
-        }
-
-        void saveUserAgentString(const char* data, const int len) const {
-            const char XTRA_FOLDER[] = "/data/misc/location/xtra";
-            const char USER_AGENT_FILE[] = "/data/misc/location/xtra/useragent.txt";
-
-            if (data == NULL || len < 1) {
-                LOC_LOGE("%s:%d]: invalid input data = %p len = %d", __func__, __LINE__, data, len);
-                return;
-            }
-
-            struct stat s;
-            int err = stat(XTRA_FOLDER, &s);
-            if (err < 0) {
-                if (ENOENT == errno) {
-                    if (mkdir(XTRA_FOLDER, 0700) < 0) {
-                        LOC_LOGE("%s:%d]: make XTRA_FOLDER failed", __func__, __LINE__);
-                        return;
-                    }
-                } else {
-                    LOC_LOGE("%s:%d]: XTRA_FOLDER invalid", __func__, __LINE__);
-                    return;
-                }
-            }
-
-            FILE* file = fopen(USER_AGENT_FILE, "wt");
-            if (file == NULL) {
-                LOC_LOGE("%s:%d]: open USER_AGENT_FILE failed", __func__, __LINE__);
-                return;
-            }
-
-            size_t written = fwrite(data, 1, len, file);
-            fclose(file);
-            file = NULL;
-
-            // set file permission
-            chmod(USER_AGENT_FILE, 0600);
-
-            if (written != len) {
-                LOC_LOGE("%s:%d]: write USER_AGENT_FILE failed", __func__, __LINE__);
-            }
-        }
-
-        void getChipsetSerialNo(char buf[], int buflen, const char def[]) const {
-            const char SOC_SERIAL_NUMBER[] = "/sys/devices/soc0/serial_number";
-
-            FILE* file = fopen(SOC_SERIAL_NUMBER, "rt");
-            if (file == NULL) {
-                // use default upon unreadable file
-                strlcpy(buf, def, buflen);
-
-            } else {
-                size_t size = fread(buf, 1, buflen - 1, file);
-                if (size == 0) {
-                   // use default upon empty file
-                   strlcpy(buf, def, buflen);
-
-                } else {
-                   buf[size] = '\0';
-                }
-
-                fclose(file);
-
-                // remove trailing spaces
-                size_t len = strlen(buf);
-                while (--len >= 0 && isspace(buf[len])) {
-                    buf[len] = '\0';
-                }
-            }
-
-            return;
-        }
-
-        /**
-         *  encode the given string value such that all separator characters ('/','+','|','%')
-         *  in the string are repaced by their corresponding encodings (%2F","%2B","%7C", "%25")
-         */
-        static void encodeInPlace(char value[], const int size) {
-            char buffer[size];
-
-            struct ENCODE {
-                const char ch;
-                const char *code;
-            };
-
-            const ENCODE encodings[] = { {'/', "%2F"}, {'+', "%2B"}, {'|', "%7C",}, {'%', "%25"} };
-            const int nencodings = (int)sizeof(encodings) / sizeof(encodings[0]);
-
-            int inpos = 0, outpos = 0;
-            while(value[inpos] != '\0' && outpos < size - 1) {
-                // check if escaped character
-                int escchar = 0;
-                while(escchar < nencodings && encodings[escchar].ch != value[inpos]) {
-                    escchar++;
-                }
-
-                if (escchar == nencodings) {
-                    // non escaped character
-                    buffer[outpos++] = value[inpos++];
-                    continue;
-                }
-
-                // escaped character
-                int codepos = 0;
-                #define NUM_CHARS_IN_CODE 3
-
-                if (outpos + NUM_CHARS_IN_CODE >= size) {
-                    // skip last character if there is insufficient space
-                    break;
-                }
-
-                while(outpos < size - 1 && codepos < NUM_CHARS_IN_CODE) {
-                    buffer[outpos++] = encodings[escchar].code[codepos++];
-                }
-                inpos++;
-            }
-
-            // copy to ouput
-            value[outpos] = '\0';
-            while(--outpos >= 0) {
-                value[outpos] = buffer[outpos];
-            }
-        }
-    };
-
-    sendMsg(new LocSetXtraUserAgent(mContext));
 }
 
 void LocInternalAdapter::setUlpProxy(UlpProxyBase* ulp) {
@@ -375,14 +202,14 @@ void LocEngAdapter::reportPosition(UlpLocation &location,
     }
 }
 
-void LocInternalAdapter::reportSv(QtiGnssSvStatus &svStatus,
+void LocInternalAdapter::reportSv(GnssSvStatus &svStatus,
                                   GpsLocationExtended &locationExtended,
                                   void* svExt){
     sendMsg(new LocEngReportSv(mLocEngAdapter, svStatus,
                                locationExtended, svExt));
 }
 
-void LocEngAdapter::reportSv(QtiGnssSvStatus &svStatus,
+void LocEngAdapter::reportSv(GnssSvStatus &svStatus,
                              GpsLocationExtended &locationExtended,
                              void* svExt)
 {
@@ -564,10 +391,10 @@ enum loc_api_adapter_err LocEngAdapter::setXtraVersionCheck(int check)
     return ret;
 }
 
-void LocEngAdapter::reportGpsMeasurementData(GpsData &gpsMeasurementData)
+void LocEngAdapter::reportGnssMeasurementData(GnssData &gnssMeasurementData)
 {
-    sendMsg(new LocEngReportGpsMeasurement(mOwner,
-                                           gpsMeasurementData));
+    sendMsg(new LocEngReportGnssMeasurement(mOwner,
+                                           gnssMeasurementData));
 }
 
 /*

@@ -52,29 +52,29 @@ public:
         return false;
     }
 
-    inline virtual bool reportPosition(UlpLocation &location,
-                                       GpsLocationExtended &locationExtended,
-                                       void* locationExt,
-                                       enum loc_sess_status status,
-                                       LocPosTechMask loc_technology_mask) {
+    inline virtual bool reportPosition(UlpLocation& /* location */,
+                                       GpsLocationExtended& /* locationExtended */,
+                                       void* /* locationExt */,
+                                       enum loc_sess_status /* status */,
+                                       LocPosTechMask /* loc_technology_mask */) {
         return false;
     }
-    inline virtual bool reportSv(QtiGnssSvStatus &svStatus,
-                                 GpsLocationExtended &locationExtended,
-                                 void* svExt) {
+    inline virtual bool reportSv(QtiGnssSvStatus& /* svStatus */,
+                                 GpsLocationExtended& /* locationExtended */,
+                                 void* /* svExt */) {
         return false;
     }
-    inline virtual bool reportStatus(GpsStatusValue status) {
+    inline virtual bool reportStatus(GpsStatusValue /* status*/) {
         return false;
     }
-    inline virtual void setAdapter(LocAdapterBase* adapter) {}
-    inline virtual void setCapabilities(unsigned long capabilities) {}
-    inline virtual bool reportBatchingSession(FlpExtBatchOptions &options,
-                                              bool active) {
+    inline virtual void setAdapter(LocAdapterBase* /* adapter */) {}
+    inline virtual void setCapabilities(unsigned long /* capabilities */) {}
+    inline virtual bool reportBatchingSession(FlpExtBatchOptions& /* options */,
+                                              bool /* active */) {
         return false;
     }
-    inline virtual bool reportPositions(const FlpExtLocation* locations,
-                                        int32_t number_of_locations) {
+    inline virtual bool reportPositions(const FlpExtLocation* /* locations */,
+                                        int32_t /* number_of_locations */) {
         return false;
     }
 };

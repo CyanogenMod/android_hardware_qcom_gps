@@ -80,10 +80,10 @@ public:
 
     // This will be overridden by the individual adapters
     // if necessary.
-    inline virtual void setUlpProxy(UlpProxyBase* ulp) {}
+    inline virtual void setUlpProxy(UlpProxyBase* /* ulp */) {}
     virtual void handleEngineUpEvent();
     virtual void handleEngineDownEvent();
-    inline virtual void setPositionModeInt(LocPosMode& posMode) {}
+    inline virtual void setPositionModeInt(LocPosMode& /* posMode */) {}
     virtual void startFixInt() {}
     virtual void stopFixInt() {}
     virtual void getZppInt() {}

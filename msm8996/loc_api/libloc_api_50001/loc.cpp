@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -285,6 +285,7 @@ static int loc_init(GpsCallbacks* callbacks)
     }
 
     event = LOC_API_ADAPTER_BIT_PARSED_POSITION_REPORT |
+            LOC_API_ADAPTER_BIT_GNSS_MEASUREMENT |
             LOC_API_ADAPTER_BIT_SATELLITE_REPORT |
             LOC_API_ADAPTER_BIT_LOCATION_SERVER_REQUEST |
             LOC_API_ADAPTER_BIT_ASSISTANCE_DATA_REQUEST |
@@ -304,7 +305,9 @@ static int loc_init(GpsCallbacks* callbacks)
                                     NULL, /* location_ext_parser */
                                     NULL, /* sv_ext_parser */
                                     callbacks->request_utc_time_cb, /* request_utc_time_cb */
-                                    };
+                                    callbacks->set_system_info_cb, /* set_system_info_cb */
+                                    callbacks->gnss_sv_status_cb, /* gnss_sv_status_cb */
+    };
 
     gps_loc_cb = callbacks->location_cb;
     gps_sv_cb = callbacks->sv_status_cb;
@@ -314,8 +317,7 @@ static int loc_init(GpsCallbacks* callbacks)
     loc_afw_data.adapter->mSupportsPositionInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
     loc_afw_data.adapter->mSupportsTimeInjection = !loc_afw_data.adapter->hasCPIExtendedCapabilities();
     loc_afw_data.adapter->setGpsLockMsg(0);
-    loc_afw_data.adapter->requestUlp(getCarrierCapabilities());
-    loc_afw_data.adapter->setXtraUserAgent();
+    loc_afw_data.adapter->requestUlp(ContextBase::getCarrierCapabilities());
 
     if(retVal) {
         LOC_LOGE("loc_eng_init() fail!");
@@ -538,7 +540,10 @@ SIDE EFFECTS
 static void loc_delete_aiding_data(GpsAidingData f)
 {
     ENTRY_LOG();
+
+#ifndef TARGET_BUILD_VARIANT_USER
     loc_eng_delete_aiding_data(loc_afw_data, f);
+#endif
 
     EXIT_LOG(%s, VOID_RET);
 }
